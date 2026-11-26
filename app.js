@@ -114,7 +114,7 @@
       if (!auth.authed) b.push(['', 'Nur Ansicht', auth.windowOpen ? 'Dieses Handy ist nicht gekoppelt. Unter „Mehr“ jetzt koppeln.' : 'Zum Koppeln das Gerät aus- und einschalten und innert 60 Sekunden verbinden.']);
       if (!(status.hwBits & P.HB.S1)) b.push(['err', 'Sensor O nicht erreichbar', 'Steckkabel zum Sensor am Oberschenkel prüfen. Der Alarm arbeitet so lange nicht.']);
       if (!(status.hwBits & P.HB.S2)) b.push(['err', 'Sensor U nicht erreichbar', 'Kabel über das Knie zum Sensor am Unterschenkel prüfen. Der Alarm arbeitet so lange nicht.']);
-      if (settings && settings.motorOn === false) b.push(['', 'Vibration am Gerät ist aus', 'Bei Überstreckung warnt nur das Handy, und nur solange die App offen ist. Einschalten unter „Alarm“.']);
+      if (settings && settings.motorOn === false) b.push(['', 'Vibration am Gerät ist aus', 'Bei Überstreckung warnt nur das Handy. Einschalten unter „Alarm“.']);
       if (!(status.hwBits & P.HB.MOTOR)) b.push(['err', 'Vibrationsmotor nicht gefunden', 'Das Gerät kann nicht vibrieren. Verkabelung des Motortreibers prüfen.']);
       else if (live && (live.aflags & P.AF.MOTOR_FAULT)) b.push(['err', 'Motor gestört', 'Die Motordiagnose meldet einen Fehler (Motor nicht angeschlossen oder Kurzschluss). Bei Überstreckung warnt nur das Handy.']);
       if (live && (live.aflags & P.AF.BATT_CRIT)) b.push(['err', 'Akku fast leer', 'Der Alarm fällt bald aus. Bitte jetzt laden.']);
