@@ -158,9 +158,8 @@ body.fit-live { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) 
 .angle sup { font-size: .42em; vertical-align: top; position: relative; top: .14em; margin-left: 2px; }
 .stateline { font-size: 21px; font-weight: 600; color: var(--akzent); min-height: 28px; margin-top: 2px; }
 .subline { font-size: 15px; color: var(--grau); min-height: 21px; }
-/* Zwei feste Zeilen: die Anzeige darf nicht springen, wenn ein Hinweis kommt oder geht */
-#subLine { min-height: 42px; }
-#subLine span { display: block; min-height: 21px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Eine feste Zeile: die Anzeige darf nicht springen, wenn sich der Text aendert */
+#subLine { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .silbar { margin: 0 0 12px; padding: 10px 10px 10px 14px; border-radius: 16px; background: var(--schiefer); color: #fff; display: flex; align-items: center; gap: 10px; }
 .silbar svg { width: 24px; height: 24px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .silbar .grow { font-weight: 600; }
