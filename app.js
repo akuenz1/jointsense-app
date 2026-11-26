@@ -130,7 +130,7 @@
   // ---------------------------------------------------------------------------
   const kneeView = window.KneeArt.gauge($('knee'));
   const heroSvg = $('heroKnee'); heroSvg.__g = window.KneeArt.gauge(heroSvg); heroSvg.dataset.kanim = 'hero';
-  let rafPending = false, lastPhoneState = -1;
+  let rafPending = false, lastPhoneState = -1, vertSince = 0, vertLast = 0;
   function onLive(l) {
     pushChart(l); recordRow(l); phoneAlarm(l); updCheck();
     if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; renderLive(); }); }
@@ -162,13 +162,17 @@
     if (l.angle === null) { $('angle').textContent = '–'; }
     else $('angle').innerHTML = esc(fmt(l.angle, 1)) + '<sup>°</sup>';
     $('stateLine').textContent = text;
-    let sub = '';
+    let sub = '', hint = '';
     if (l.angle !== null && l.state !== P.STATE.CAL) {
-      if (l.aflags & P.AF.UNRELIABLE) sub = `Messung unsicher (±${fmt(l.sigma, 1)}°). Bein kurz ruhig halten.`;
+      if (l.aflags & P.AF.UNRELIABLE) sub = `Messung unsicher (±${fmt(l.sigma, 1)}°), kurz ruhig halten`;
       else sub = `Grenze ${fmt(lim, 1)}° · Genauigkeit ±${fmt(Math.max(0.1, l.sigma), 1)}°`;
-      if (l.sysFlags & P.SF.VERT) sub += ' (Seitenlage: weniger genau)';
-    }
-    $('subLine').textContent = sub;
+      // Hinweis Seitenlage beruhigt: erscheint nach 1 s, verschwindet erst nach 2 s ohne Meldung
+      const now = performance.now();
+      if (l.sysFlags & P.SF.VERT) { if (!vertSince) vertSince = now; vertLast = now; } else if (now - vertLast > 2000) vertSince = 0;
+      if (vertSince && now - vertSince > 1000) hint = 'Seitenlage: weniger genau';
+    } else { vertSince = 0; }
+    const sl = $('subLine');
+    sl.innerHTML = `<span>${esc(sub)}</span><span>${esc(hint)}</span>`;
     // Stumm / Aus deutlich zeigen
     const sb = $('silBar');
     if (l.silence === P.SILENCE.OFF) { sb.hidden = false; $('silText').textContent = 'Alarm ist ausgeschaltet'; }
