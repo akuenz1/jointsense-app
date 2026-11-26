@@ -2,8 +2,8 @@
 'use strict';
 (function () {
   const P = window.KneeProto;
-  const APP_VERSION = '4.0.0';
-  const FW_VERSION = '3.0';         // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
+  const APP_VERSION = '4.1.0';
+  const FW_VERSION = '3.0c';         // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
   const $ = (id) => document.getElementById(id);
   const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d).replace('-', '−');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -12,7 +12,7 @@
   let live = null, status = null, settings = null, edit = null, cal = null, diag = null, devTimes;
   let auth = { authed: false, windowOpen: false, ownerSet: false };
   let conn = 'disconnected';
-  const prefs = { phoneSound: true, phoneVib: true, wake: false };
+  const prefs = { phoneSound: true, phoneVib: true, apprSound: true, apprVib: true, wake: false };
   // Speicher-Schluessel "js.*": die KneeAngle-App liegt auf derselben Adresse und benutzt "knee.*"
   try { Object.assign(prefs, JSON.parse(localStorage.getItem('js.prefs') || '{}')); } catch (e) { /* Standardwerte */ }
   if (prefs.phoneAlarm === false) { prefs.phoneSound = false; prefs.phoneVib = false; }   // Einstellung der alten Version uebernehmen
@@ -220,17 +220,40 @@
   $('btnArm2').addEventListener('click', armAgain);
 
   // ---- Ton und Vibration am Handy ---------------------------------------------
-  let audio = null, beepTimer = null;
+  //  Wie der Motor: in der Annaeherungszone leichte Pulse, die zur Grenze hin schneller werden
+  //  (Pulsraten aus den Geraete-Einstellungen, Pause wie am Geraet, wenn sich das Knie nicht zur Grenze
+  //  bewegt), bei Ueberschreitung Dauerton und Dauervibration. Je eigene Schalter (Alarm -> Handy).
+  let audio = null, contOsc = null, contVibTimer = null, apprPhase = 1, apprLastT = 0;
   function ensureAudio() { try { if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)(); if (audio.state === 'suspended') audio.resume(); } catch (e) { audio = null; } }
-  function beep() {
-    if (audio && prefs.phoneSound) { const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = 880; o.connect(g); g.connect(audio.destination); g.gain.setValueAtTime(0.25, audio.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.18); o.start(); o.stop(audio.currentTime + 0.2); }
-    if (navigator.vibrate && prefs.phoneVib) navigator.vibrate(180);
+  function pulse() {
+    if (audio && prefs.apprSound) {
+      try { const o = audio.createOscillator(), g = audio.createGain(); o.type = 'triangle'; o.frequency.value = 523; o.connect(g); g.connect(audio.destination);
+        g.gain.setValueAtTime(0.18, audio.currentTime); g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.06); o.start(); o.stop(audio.currentTime + 0.07); } catch (e) { /* egal */ }
+    }
+    if (navigator.vibrate && prefs.apprVib) navigator.vibrate(35);
   }
-  function stopPhoneAlarm() { if (beepTimer) { clearInterval(beepTimer); beepTimer = null; } lastPhoneState = -1; }
+  function startCont() {
+    if (prefs.phoneSound && audio && !contOsc) {
+      try { const o = audio.createOscillator(), g = audio.createGain(); o.type = 'square'; o.frequency.value = 880; g.gain.value = 0.08; o.connect(g); g.connect(audio.destination); o.start(); contOsc = { o, g }; } catch (e) { contOsc = null; }
+    }
+    if (prefs.phoneVib && navigator.vibrate && !contVibTimer) { navigator.vibrate(1000); contVibTimer = setInterval(() => navigator.vibrate(1000), 900); }
+  }
+  function stopCont() {
+    if (contOsc) { try { contOsc.o.stop(); contOsc.o.disconnect(); contOsc.g.disconnect(); } catch (e) { /* egal */ } contOsc = null; }
+    if (contVibTimer) { clearInterval(contVibTimer); contVibTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
+  }
+  function stopPhoneAlarm() { stopCont(); apprPhase = 1; apprLastT = 0; lastPhoneState = -1; }
   function phoneAlarm(l) {
-    const on = (prefs.phoneSound || prefs.phoneVib) && l.state === P.STATE.OVER && l.silence === P.SILENCE.NONE;
-    if (on && !beepTimer) { beep(); beepTimer = setInterval(beep, 350); }
-    else if (!on && beepTimer) stopPhoneAlarm();
+    const armed = l.silence === P.SILENCE.NONE && l.angle !== null;
+    const now = performance.now(), dt = apprLastT ? Math.min(0.2, (now - apprLastT) / 1000) : 0; apprLastT = now;
+    if (armed && l.state === P.STATE.OVER && (prefs.phoneSound || prefs.phoneVib)) { startCont(); apprPhase = 1; return; }
+    stopCont();
+    const appr = armed && l.state === P.STATE.APPROACH && settings && settings.approachOn && (prefs.apprSound || prefs.apprVib);
+    if (!appr || (l.aflags & P.AF.PAUSED)) { apprPhase = 1; return; }
+    const frac = Math.max(0, Math.min(1, 1 - (l.angle - l.effLimit) / settings.zone));
+    const f = settings.rateMin + (settings.rateMax - settings.rateMin) * frac;
+    apprPhase += f * dt;
+    if (apprPhase >= 1) { apprPhase = apprPhase >= 2 ? 0 : apprPhase - 1; pulse(); }
   }
 
   // ---------------------------------------------------------------------------
@@ -722,7 +745,7 @@
   // ---------------------------------------------------------------------------
   const F = [['sLimit', 'limit', 'oLimit', (v) => fmt(v, 1) + '°'], ['sZone', 'zone', 'oZone', (v) => fmt(v, 0) + '° vorher'], ['sAppStr', 'approachStrength', 'oAppStr', (v) => v + ' %'],
     ['sAlStr', 'alarmStrength', 'oAlStr', (v) => v + ' %'], ['sHyst', 'hyst', 'oHyst', (v) => fmt(v, 1) + '°'], ['sRateMin', 'rateMin', 'oRateMin', (v) => fmt(v, 1)],
-    ['sRateMax', 'rateMax', 'oRateMax', (v) => fmt(v, 1)]];   // Vorhersage: im Geraet fest 20 ms (keine Einstellung mehr)
+    ['sRateMax', 'rateMax', 'oRateMax', (v) => fmt(v, 1)]];   // Vorhersage: im Geraet fest (ab Firmware 3.0c aus), keine Einstellung
   const C = [['sEnabled', 'alarmEnabled'], ['sAppOn', 'approachOn'], ['sMoveOnly', 'approachMoveOnly'], ['sCautious', 'cautiousOn'], ['sBatt', 'batteryPresent'], ['sMotorOn', 'motorOn']];
   function isDirty() { return !!(edit && settings && JSON.stringify(edit) !== JSON.stringify(settings)); }
   function fillForm() {
@@ -880,12 +903,14 @@
     if (live) kv.push(['Winkelgeschwindigkeit', fmt(live.rate, 0) + ' °/s'], ['Status-Bits', '0x' + live.sysFlags.toString(16)]);
     $('diagInfo').innerHTML = kv.map((x) => `<dt>${esc(x[0])}</dt><dd>${esc(x[1])}</dd>`).join('');
   }
-  $('pPhoneSound').checked = prefs.phoneSound; $('pPhoneVib').checked = prefs.phoneVib; $('pWake').checked = prefs.wake;
-  const renderPhoneSum = () => { $('sumPhone').textContent = [prefs.phoneSound ? 'Ton' : '', prefs.phoneVib ? 'Vibration' : ''].filter(Boolean).join(' · ') || 'aus'; };
+  $('pPhoneSound').checked = prefs.phoneSound; $('pPhoneVib').checked = prefs.phoneVib; $('pApprSound').checked = prefs.apprSound; $('pApprVib').checked = prefs.apprVib; $('pWake').checked = prefs.wake;
+  const renderPhoneSum = () => { const part = (name, t, v) => t && v ? name : t ? name + ' (Ton)' : v ? name + ' (Vibr.)' : ''; $('sumPhone').textContent = [part('Alarm', prefs.phoneSound, prefs.phoneVib), part('Vorwarnung', prefs.apprSound, prefs.apprVib)].filter(Boolean).join(' + ') || 'aus'; };
   renderPhoneSum();
-  const phonePrefChanged = () => { savePrefs(); renderPhoneSum(); if (prefs.phoneSound) ensureAudio(); if (!prefs.phoneSound && !prefs.phoneVib) stopPhoneAlarm(); };
+  const phonePrefChanged = () => { savePrefs(); renderPhoneSum(); if (prefs.phoneSound || prefs.apprSound) ensureAudio(); stopPhoneAlarm(); };
   $('pPhoneSound').addEventListener('change', (e) => { prefs.phoneSound = e.target.checked; phonePrefChanged(); });
   $('pPhoneVib').addEventListener('change', (e) => { prefs.phoneVib = e.target.checked; phonePrefChanged(); });
+  $('pApprSound').addEventListener('change', (e) => { prefs.apprSound = e.target.checked; phonePrefChanged(); });
+  $('pApprVib').addEventListener('change', (e) => { prefs.apprVib = e.target.checked; phonePrefChanged(); });
   let wakeLock = null;
   async function applyWake() { try { if (prefs.wake && navigator.wakeLock && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); else if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (e) { /* nicht unterstuetzt */ } }
   $('pWake').addEventListener('change', (e) => { prefs.wake = e.target.checked; savePrefs(); applyWake(); });

@@ -2,7 +2,7 @@
 // Version 2 (KneeAngle 2.1): neues CAL-Paket (20 Byte) fuer die gefuehrten Kalibrier-Ablaeufe,
 // Befehle 'n' (weiter/bestaetigen) und 'U' (rueckgaengig).
 // Version 3 (JointSense 3.0): Messraten im STATUS-Paket in 4-Hz-Schritten, Akku-Ladestand in % im
-// LIVE-Paket (Byte 9, 0xFF = unbekannt), Vorhersage fest 20 ms (keine Einstellung mehr).
+// LIVE-Paket (Byte 9, 0xFF = unbekannt), Vorhersage fest im Geraet (ab Firmware 3.0c aus, meldet 0).
 // Laeuft im Browser (window.KneeProto) und in Node (module.exports) - siehe test/protocol.test.js
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
