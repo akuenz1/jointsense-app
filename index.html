@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2b3a44">
+<script>/* Design vor dem ersten Zeichnen setzen (kein Aufblitzen) */try{var t=(JSON.parse(localStorage.getItem("js.prefs")||"{}").theme)||"auto";if(t==="dark"||(t==="auto"&&matchMedia("(prefers-color-scheme: dark)").matches))document.documentElement.dataset.theme="dark";}catch(e){}</script>
 <title>JointSense</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
@@ -13,10 +14,11 @@
 <body data-state="off">
 
 <header class="top" id="top" hidden>
-  <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><use href="#logoMark"/></svg>
-  <div class="name"><span id="devName">JointSense</span><small id="connText">nicht verbunden</small></div>
-  <span class="batt" id="batt" hidden></span>
-  <button class="pill" id="btnConn"><span class="dot" id="connDot"></span><span id="connBtn">Verbinden</span></button>
+  <button class="who" id="btnConn" aria-label="Verbindung">
+    <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><use href="#logoMark"/></svg>
+    <span class="name"><b id="devName">JointSense</b><small><i class="dot" id="connDot"></i><span id="connText">nicht verbunden</span></small></span>
+  </button>
+  <div class="batt" id="batt" data-lvl="ok" hidden><span class="bpct" id="battPct">–</span><svg class="bicon" viewBox="0 0 30 15" aria-hidden="true"><rect class="bbody" x=".75" y=".75" width="25" height="13.5" rx="3.4"/><rect class="bcap" x="27" y="4.6" width="2.4" height="5.8" rx="1.1"/><rect class="bfill" id="battFill" x="2.75" y="2.75" width="21" height="9.5" rx="1.9"/></svg></div>
 </header>
 
 <div id="banners"></div>
@@ -27,7 +29,7 @@
     <div class="brandbar">
       <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><use href="#logoMark"/></svg>
       <div>
-        <h1 class="wordmark">JointSense</h1>
+        <h1 class="wordmark">Joint<span>Sense</span></h1>
         <div class="vers"><span id="verApp">App</span><span id="verFw">Firmware</span></div>
       </div>
     </div>
@@ -37,7 +39,6 @@
     <div class="startbtns">
       <p class="note err" id="noBle" hidden>Dieser Browser kann kein Bluetooth. Bitte Chrome auf einem Android-Handy verwenden.</p>
       <button class="btn big" id="btnStart">Gerät verbinden</button>
-      <button class="btn big sec" id="btnDemo">Ohne Gerät ansehen</button>
     </div>
   </section>
 
@@ -188,29 +189,39 @@
   <!-- Mehr -->
   <section class="view" id="view-more" hidden>
     <h2 class="title">Mehr</h2>
-    <div class="card">
-      <div class="cardhead"><h3>Gerät</h3></div>
-      <dl class="kv" id="devInfo"></dl>
-      <div class="row gap"><button class="btn sec small grow" id="btnMotorCal">Motor neu einmessen</button><button class="btn sec small grow" id="btnDisc">Trennen</button></div>
-    </div>
-    <div class="card">
-      <div class="cardhead"><h3>Kopplung</h3></div>
-      <p id="pairText" class="muted small">–</p>
-      <div class="row"><button class="btn small" id="btnPair" hidden>Dieses Handy koppeln</button><button class="btn sec small" id="btnForget" hidden>Kopplung löschen</button></div>
-    </div>
-    <div class="card">
-      <div class="field"><label>Am Testgelenk kalibrieren <span class="switch"><input type="checkbox" id="pRig"><span></span></span></label>
-        <div class="help">Anleitungen für das Holzgelenk statt für das Bein. Die Messung ist dieselbe.</div></div>
+    <details class="card sect" id="sectDev" open>
+      <summary><span class="grow">Gerät</span><output id="sumDev"></output></summary>
+      <div class="field"><label for="devNameIn">Name</label>
+        <div class="txtrow"><input class="txt" id="devNameIn" maxlength="19" autocomplete="off" spellcheck="false" placeholder="z.B. Knie links"><button class="btn small" id="btnRename">Speichern</button></div>
+        <div class="help" id="hRename">So heisst das Gerät in der App und in der Bluetooth-Liste.</div></div>
+      <div class="field"><dl class="kv" id="devInfo"></dl></div>
+      <div class="row"><button class="btn sec small" id="btnMotorCal">Motor neu einmessen</button><button class="btn sec small" id="btnDisc">Verbindung trennen</button></div>
+    </details>
+    <details class="card sect" id="sectPin">
+      <summary><span class="grow">PIN-Schutz</span><output id="sumPin"></output></summary>
+      <p class="lead" id="pinText">–</p>
+      <div class="row"><button class="btn small" id="btnPinEnter" hidden>PIN eingeben</button><button class="btn small" id="btnPinSet" hidden>PIN festlegen</button><button class="btn sec small" id="btnPinOff" hidden>PIN entfernen</button></div>
+    </details>
+    <details class="card sect">
+      <summary><span class="grow">Darstellung</span><output id="sumLook"></output></summary>
+      <div class="field"><label>Design</label>
+        <div class="segs" id="themeSegs" role="radiogroup" aria-label="Design"><button role="radio" data-theme="auto">Automatisch</button><button role="radio" data-theme="light">Hell</button><button role="radio" data-theme="dark">Dunkel</button></div>
+        <div class="help">Automatisch folgt der Einstellung des Handys.</div></div>
       <div class="field"><label>Bildschirm eingeschaltet lassen <span class="switch"><input type="checkbox" id="pWake"><span></span></span></label>
         <div class="help">Praktisch beim Training mit dem Handy in Sichtweite.</div></div>
-    </div>
-    <details class="card expander" id="diagBox">
-      <summary><span class="grow">Diagnose</span><small>für Tests</small></summary>
+    </details>
+    <details class="card sect">
+      <summary><span class="grow">Prüfstand</span><output id="sumRig"></output></summary>
+      <div class="field"><label>Am Testgelenk kalibrieren <span class="switch"><input type="checkbox" id="pRig"><span></span></span></label>
+        <div class="help">Anleitungen für das Holzgelenk statt für das Bein. Die Messung ist dieselbe.</div></div>
+    </details>
+    <details class="card sect" id="diagBox">
+      <summary><span class="grow">Diagnose</span><output>Messwerte und Bericht</output></summary>
       <dl class="kv" id="diagInfo"></dl>
       <div class="row gap"><button class="btn sec small grow" id="btnInfo">Statusbericht anfordern</button></div>
       <pre class="console" id="console" aria-live="off"></pre>
     </details>
-    <div class="about"><svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><use href="#logoMark"/></svg><div><b>JointSense</b><span>App <span id="appVer"></span> · Prototyp, kein Medizinprodukt</span></div></div>
+    <div class="about"><svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><use href="#logoMark"/></svg><div><b>JointSense</b><span>App <span id="appVer"></span> · Firmware <span id="fwVer">–</span></span></div></div>
   </section>
 </main>
 
@@ -231,16 +242,20 @@
 
 <!-- Rueckfrage im App-Design -->
 <div class="dlg" id="dlg" hidden role="alertdialog" aria-modal="true" aria-labelledby="dlgText">
-  <div class="dlgbox"><p id="dlgText"></p><div class="row"><button class="btn sec grow" id="dlgNo">Nein</button><button class="btn grow" id="dlgYes">Ja</button></div></div>
+  <div class="dlgbox"><h3 id="dlgTitle" hidden></h3><p id="dlgText"></p><div class="fields" id="dlgFields" hidden></div><p class="derr" id="dlgErr" hidden></p><div class="row"><button class="btn sec grow" id="dlgNo">Nein</button><button class="btn grow" id="dlgYes">Ja</button></div></div>
 </div>
 
 <!-- Logo -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <symbol id="logoMark" viewBox="0 0 48 48">
-    <rect width="48" height="48" rx="13" style="fill: var(--petrol)"/>
-    <path d="M30.5 13.5a17 17 0 0 1 6 15.5" fill="none" stroke="#f2b73d" stroke-width="3.2" stroke-linecap="round"/>
-    <path d="M8.5 21.5H23l8.5 15" fill="none" stroke="#fff" stroke-width="5.4" stroke-linecap="round" stroke-linejoin="round"/>
-    <circle cx="23" cy="21.5" r="4.6" style="fill: var(--petrol)" stroke="#fff" stroke-width="2.6"/>
+    <rect width="48" height="48" rx="13" fill="#2b3a44"/>
+    <g transform="translate(3.375 5.25) scale(.9375)" fill="none" stroke-linecap="round">
+      <path d="M22 4a16 16 0 0 1 0 32" stroke="#fff" stroke-opacity=".25" stroke-width="4"/>
+      <path d="M22 4a16 16 0 0 1 6.1 1.2" stroke="#e8a20c" stroke-width="4"/>
+      <path d="M22 4a16 16 0 0 0-4.1 .5" stroke="#e5483f" stroke-width="4"/>
+      <path d="M6 20H22l8.5 12.2" stroke="#fff" stroke-width="5.4" stroke-linejoin="round"/>
+      <circle cx="22" cy="20" r="2" fill="#2b3a44" stroke="none"/>
+    </g>
   </symbol>
 </svg>
 

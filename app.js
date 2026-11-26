@@ -2,22 +2,35 @@
 'use strict';
 (function () {
   const P = window.KneeProto;
-  const APP_VERSION = '4.1.0';
-  const FW_VERSION = '3.0c';         // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
+  const APP_VERSION = '4.2.0';
+  const FW_VERSION = '3.1';         // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
   const $ = (id) => document.getElementById(id);
   const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d).replace('-', '−');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
   let dev = null, demo = false;
   let live = null, status = null, settings = null, edit = null, cal = null, diag = null, devTimes;
-  let auth = { authed: false, windowOpen: false, ownerSet: false };
+  let auth = { authed: false, pinSet: false, locked: false, lockS: 0 };
   let conn = 'disconnected';
-  const prefs = { phoneSound: true, phoneVib: true, apprSound: true, apprVib: true, wake: false };
+  const prefs = { phoneSound: true, phoneVib: true, apprSound: true, apprVib: true, wake: false, theme: 'auto' };
   // Speicher-Schluessel "js.*": die KneeAngle-App liegt auf derselben Adresse und benutzt "knee.*"
   try { Object.assign(prefs, JSON.parse(localStorage.getItem('js.prefs') || '{}')); } catch (e) { /* Standardwerte */ }
   if (prefs.phoneAlarm === false) { prefs.phoneSound = false; prefs.phoneVib = false; }   // Einstellung der alten Version uebernehmen
   delete prefs.phoneAlarm;
   const savePrefs = () => { try { localStorage.setItem('js.prefs', JSON.stringify(prefs)); } catch (e) { /* egal */ } };
+
+  // ---- Design: automatisch (wie das Handy), hell oder dunkel ---------------------------
+  const mqDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : { matches: false, addEventListener() {} };
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  function applyTheme() {
+    const dark = prefs.theme === 'dark' || (prefs.theme === 'auto' && mqDark.matches);
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.content = dark ? '#172128' : '#2b3a44';
+    document.querySelectorAll('#themeSegs button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.theme === prefs.theme)));
+    const sl = document.getElementById('sumLook'); if (sl) sl.textContent = { auto: 'Automatisch', light: 'Hell', dark: 'Dunkel' }[prefs.theme] || '';
+    if (typeof drawChart === 'function') { if (curView === 'log') drawChart($('chart'), chartSpan * 1000); if (curView === 'live') drawChart($('spark'), 120000); }
+  }
+  (mqDark.addEventListener ? mqDark.addEventListener.bind(mqDark) : () => {})('change', () => { if (prefs.theme === 'auto') applyTheme(); });
 
   // ---------------------------------------------------------------------------
   //  Navigation
@@ -50,7 +63,8 @@
   // ---------------------------------------------------------------------------
   function attach(d) {
     dev = d;
-    d.on('conn', (s) => { conn = s; if (s === 'connected') { $('devName').textContent = d.name; } renderConn(); renderBanners(); renderCalTab(); renderWzConn(); if (s !== 'connected') { live = null; renderLive(); stopPhoneAlarm(); } });
+    d.on('name', (n) => { $('devName').textContent = n; renderDevTile(); });
+    d.on('conn', (s) => { conn = s; if (s === 'connected') { $('devName').textContent = d.name; renderDevTile(); } renderConn(); renderBanners(); renderCalTab(); renderWzConn(); if (s !== 'connected') { live = null; renderLive(); stopPhoneAlarm(); } });
     d.on('live', (l) => { live = l; onLive(l); });
     d.on('status', (s) => { status = s; renderStatus(); renderBanners(); });
     d.on('settings', (s) => { settings = s; if (!edit || !isDirty()) { edit = { ...s }; fillForm(); } renderLive(); renderBanners(); });
@@ -69,10 +83,9 @@
     catch (e) { if (e && e.name !== 'NotFoundError') toast('Verbindung fehlgeschlagen' + (e && e.name === 'StepError' ? ' – ' + e.message : '. Ist das Gerät eingeschaltet und in der Nähe?'), true); conn = 'disconnected'; renderConn(); }
   }
   $('btnStart').addEventListener('click', connectReal);
-  $('btnDemo').addEventListener('click', async () => { demo = true; attach(new window.DemoDevice()); ensureAudio(); await dev.connect(); show('live'); });
   async function disconnectAsk() {
     if (!dev) { show('welcome'); return; }
-    if (conn === 'connected' && !await ask(demo ? 'Ansicht ohne Gerät beenden?' : 'Verbindung zum Gerät trennen? Das Gerät misst und warnt weiter.', 'Trennen', 'Abbrechen')) return;
+    if (conn === 'connected' && !await ask(`Verbindung zu «${dev.name}» trennen? Das Gerät misst und warnt weiter.`, 'Trennen', 'Abbrechen')) return;
     dev.disconnect(); if (demo) show('welcome');
   }
   $('btnConn').addEventListener('click', () => {
@@ -81,9 +94,11 @@
   });
   $('btnDisc').addEventListener('click', disconnectAsk);
   function renderConn() {
-    const map = { connected: ['on', demo ? 'Ansicht ohne Gerät' : 'verbunden', demo ? 'Demo' : 'Verbunden'], connecting: ['wait', 'verbinde …', 'Verbinde …'], reconnecting: ['wait', 'Verbindung verloren, suche Gerät …', 'Suche …'], disconnected: ['off', 'nicht verbunden', 'Verbinden'] };
+    const map = { connected: ['on', 'verbunden'], connecting: ['wait', 'verbinde …'], reconnecting: ['wait', 'Verbindung verloren, suche …'], disconnected: ['off', 'getrennt · tippen zum Verbinden'] };
     const m = map[conn] || map.disconnected;
-    $('connDot').dataset.s = m[0]; $('btnConn').dataset.s = m[0]; $('connText').textContent = m[1]; $('connBtn').textContent = m[2];
+    $('connDot').dataset.s = m[0]; $('btnConn').dataset.s = m[0]; $('connText').textContent = m[1];
+    $('btnConn').setAttribute('aria-label', conn === 'connected' ? 'Verbunden, tippen zum Trennen' : 'Nicht verbunden, tippen zum Verbinden');
+    if (conn !== 'connected') $('batt').hidden = true;
     $('btnDisc').hidden = conn !== 'connected';
     if (typeof renderPair === 'function') renderPair();
     if (typeof renderBanners === 'function') renderBanners();
@@ -98,7 +113,7 @@
   }
   async function act(fn, okText) {
     if (conn !== 'connected') { toast('Nicht verbunden.', true); return false; }
-    if (!auth.authed) { toast('Dieses Handy ist nicht gekoppelt. Siehe „Mehr“.', true); return false; }
+    if (!auth.authed) { toast('Dieses Handy kennt die PIN noch nicht. Unter «Mehr» → PIN-Schutz eingeben.', true); return false; }
     try { await fn(); if (okText) toast(okText); return true; } catch (e) { toast('Das hat nicht geklappt. Verbindung prüfen.', true); return false; }
   }
 
@@ -111,7 +126,7 @@
       if (status.proto < P.PROTO_VERSION) b.push(['err', 'Firmware zu alt', `Auf dem Gerät läuft Firmware ${status.fw} (KneeAngle). Diese App gehört zu JointSense mit Firmware ${FW_VERSION}; für ein KneeAngle-Gerät die KneeAngle-App verwenden.`]);
       else if (status.proto > P.PROTO_VERSION) b.push(['err', 'App zu alt', 'Das Gerät hat eine neuere Firmware. Bitte die App neu laden (aktualisieren).']);
       if (cal && cal.mode && !wz.kind) b.push(['run', 'Kalibrierung läuft', `Auf dem Gerät läuft «${TITLE[MODE_KIND[cal.mode]]}». Der Alarm ist so lange aus.`]);
-      if (!auth.authed) b.push(['', 'Nur Ansicht', auth.windowOpen ? 'Dieses Handy ist nicht gekoppelt. Unter „Mehr“ jetzt koppeln.' : 'Zum Koppeln das Gerät aus- und einschalten und innert 60 Sekunden verbinden.']);
+      if (!auth.authed) b.push(['pin', 'Nur Ansicht', auth.locked ? `Zu viele falsche Versuche. Neuer Versuch in ${auth.lockS} s.` : 'Das Gerät ist mit einer PIN geschützt. Zum Ändern von Einstellungen die PIN eingeben.']);
       if (!(status.hwBits & P.HB.S1)) b.push(['err', 'Sensor O nicht erreichbar', 'Steckkabel zum Sensor am Oberschenkel prüfen. Der Alarm arbeitet so lange nicht.']);
       if (!(status.hwBits & P.HB.S2)) b.push(['err', 'Sensor U nicht erreichbar', 'Kabel über das Knie zum Sensor am Unterschenkel prüfen. Der Alarm arbeitet so lange nicht.']);
       if (settings && settings.motorOn === false) b.push(['', 'Vibration am Gerät ist aus', 'Bei Überstreckung warnt nur das Handy. Einschalten unter „Alarm“.']);
@@ -121,8 +136,9 @@
       else if (live && (live.aflags & P.AF.BATT_LOW)) b.push(['', 'Akku schwach', 'Bitte bald laden.']);
       if (!(status.calBits & P.CB.ACC1) || !(status.calBits & P.CB.ACC2)) b.push(['', 'Sensoren noch nicht eingemessen', 'Unter «Kalibrieren» einmalig «Sensoren einmessen». Ohne kann der Winkel um mehrere Grad falsch sein.']);
     }
-    $('banners').innerHTML = b.map((x) => `<div class="banner ${x[0]}"><b>${esc(x[1])}</b>${esc(x[2])}${x[0] === 'run' ? '<button class="btn small" id="btnResume">Anzeigen</button>' : ''}</div>`).join('');
+    $('banners').innerHTML = b.map((x) => `<div class="banner ${x[0] === 'pin' ? 'run' : x[0]}"><b>${esc(x[1])}</b>${esc(x[2])}${x[0] === 'run' ? '<button class="btn small" id="btnResume">Anzeigen</button>' : ''}${x[0] === 'pin' && !auth.locked ? '<button class="btn small" id="btnPinBanner">PIN eingeben</button>' : ''}</div>`).join('');
     const br = $('btnResume'); if (br) br.addEventListener('click', () => { if (cal && cal.mode) wzResume(cal); });
+    const bp = $('btnPinBanner'); if (bp) bp.addEventListener('click', pinEnter);
   }
 
   // ---------------------------------------------------------------------------
@@ -132,7 +148,7 @@
   const heroSvg = $('heroKnee'); heroSvg.__g = window.KneeArt.gauge(heroSvg); heroSvg.dataset.kanim = 'hero';
   let rafPending = false, lastPhoneState = -1;
   function onLive(l) {
-    pushChart(l); recordRow(l); phoneAlarm(l); updCheck();
+    pushChart(l); recordRow(l); phoneAlarm(l); updCheck(); if (status) renderBatt();
     if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; renderLive(); }); }
   }
   function invalidReason() {
@@ -187,6 +203,16 @@
     $('btnArm2').hidden = !(conn === 'connected' && l && l.silence !== P.SILENCE.NONE);
     $('muteBtns').hidden = conn !== 'connected' || (l && l.silence === P.SILENCE.OFF);
   }
+  // Akku oben rechts wie am Handy: Prozent und Symbol, gruen / gelb / rot
+  function renderBatt() {
+    const bt = $('batt');
+    if (conn !== 'connected' || !status || !(status.hwBits & P.HB.BATT) || !(status.battMv > 0)) { bt.hidden = true; return; }
+    const pct = battPercent(), fl = live ? live.aflags : 0;
+    const lvl = ((fl & P.AF.BATT_CRIT) || pct <= 15) ? 'crit' : ((fl & P.AF.BATT_LOW) || pct <= 35) ? 'low' : 'ok';
+    bt.hidden = false; bt.dataset.lvl = lvl; $('battPct').textContent = pct + ' %';
+    $('battFill').setAttribute('width', (Math.max(6, pct) / 100 * 21).toFixed(1));
+    bt.setAttribute('aria-label', `Akku ${pct} Prozent`); bt.setAttribute('role', 'img');
+  }
   // Ladestand: ab Firmware 3.0 vom Akkuwaechter (MAX17048), sonst grob aus der Spannung
   function battPercent() {
     if (status && status.proto >= 3 && live && live.battPct <= 100) return live.battPct;
@@ -199,16 +225,14 @@
     $('fOver').textContent = status.overCount; $('lOver').textContent = status.overCount; $('lWarn').textContent = status.warnCount; $('lApp').textContent = status.approachCount;
     $('fOver').dataset.on = status.overCount > 0 ? '1' : '0'; $('lOver').dataset.on = status.overCount > 0 ? '1' : '0';
     $('lWarn').dataset.on = status.warnCount > 0 ? '1' : '0'; $('lApp').dataset.on = status.approachCount > 0 ? '1' : '0';
-    const bt = $('batt');
-    if ((status.hwBits & P.HB.BATT) && status.battMv > 0) {
-      const pct = battPercent();
-      bt.hidden = false; bt.textContent = `Akku ${pct} %`; bt.dataset.low = status.battMv < 3500 ? '1' : '0';
-    } else bt.hidden = true;
+    renderBatt();
     renderCalTab();
     const kv = [['Firmware', status.fw], ['Sensor Oberschenkel', (status.hwBits & P.HB.S1) ? `ok, ${status.rateS1} Hz` : 'Fehler'], ['Sensor Unterschenkel', (status.hwBits & P.HB.S2) ? `ok, ${status.rateS2} Hz` : 'Fehler'],
       ['Vibrationsmotor', (status.hwBits & P.HB.MOTOR) ? ((status.calBits & P.CB.MOTORCAL) ? 'ok, eingemessen' : 'ok') : 'nicht gefunden'],
       ['Akku', (status.hwBits & P.HB.BATT) ? `${(status.battMv / 1000).toFixed(2)} V, ${battPercent()} %` : 'nicht gemessen']];
     $('devInfo').innerHTML = kv.map((x) => `<dt>${esc(x[0])}</dt><dd>${esc(x[1])}</dd>`).join('');
+    $('fwVer').textContent = status.fw;
+    renderDevTile(); renderPair();
     if (live) renderLive();
   }
   document.querySelectorAll('#muteBtns button').forEach((b) => b.addEventListener('click', () => act(() => dev.send(P.cmd.mute(+b.dataset.mute)), `Alarm ${b.dataset.mute} Minuten stumm`)));
@@ -433,7 +457,7 @@
     }
     document.querySelector('[data-cal="joint"]').textContent = joint ? 'Neu anlegen' : 'Anlegen';
     document.querySelectorAll('[data-cal]').forEach((b) => { b.disabled = !ready || running || (b.dataset.cal === 'zero' && !joint); });
-    $('pRig').checked = !onLeg();
+    $('pRig').checked = !onLeg(); $('sumRig').textContent = onLeg() ? 'Bein' : 'Testgelenk';
     const u = $('undoBlock');
     u.hidden = !(ready && cal && cal.undo && !running);
     if (!u.hidden) $('undoText').textContent = 'Letzte Änderung verwerfen und die vorherige Kalibrierung wieder verwenden.';
@@ -443,13 +467,23 @@
   document.querySelectorAll('[data-cal]').forEach((b) => b.addEventListener('click', () => openWizard(b.dataset.cal)));
   $('btnUndo').addEventListener('click', async () => { if (await ask('Letzte Änderung rückgängig machen?', 'Rückgängig', 'Abbrechen')) undoLast(); });
   // Eigene Rückfrage im App-Design (statt der Browser-Meldung)
-  function ask(text, yes = 'Ja', no = 'Nein') {
+  function ask(text, yes = 'Ja', no = 'Nein') { return form({ text, yes, no }).then((v) => v !== null); }
+  // Rueckfrage mit Eingabefeldern: Rueckgabe Werte oder null; check(werte) liefert eine Fehlermeldung oder ''
+  function form({ title = '', text = '', fields = [], yes = 'OK', no = 'Abbrechen', check = null }) {
     return new Promise((resolve) => {
-      const d = $('dlg');
-      $('dlgText').textContent = text; $('dlgYes').textContent = yes; $('dlgNo').textContent = no;
-      d.hidden = false; $('dlgNo').focus();
-      const done = (v) => { d.hidden = true; $('dlgYes').onclick = $('dlgNo').onclick = null; resolve(v); };
-      $('dlgYes').onclick = () => done(true); $('dlgNo').onclick = () => done(false);
+      const d = $('dlg'), fb = $('dlgFields'), er = $('dlgErr');
+      $('dlgTitle').textContent = title; $('dlgTitle').hidden = !title;
+      $('dlgText').textContent = text; $('dlgText').hidden = !text;
+      fb.innerHTML = fields.map((f, i) => `<input class="txt" id="dlgF${i}" type="${f.type || 'text'}" inputmode="${f.inputmode || 'text'}" autocomplete="off" maxlength="${f.max || 40}" placeholder="${esc(f.placeholder || '')}" aria-label="${esc(f.placeholder || '')}">`).join('');
+      fb.hidden = !fields.length; er.hidden = true;
+      $('dlgYes').textContent = yes; $('dlgNo').textContent = no;
+      d.hidden = false;
+      const inputs = fields.map((f, i) => $('dlgF' + i));
+      (inputs[0] || $('dlgNo')).focus();
+      const done = (v) => { d.hidden = true; $('dlgYes').onclick = $('dlgNo').onclick = null; inputs.forEach((x) => { x.onkeydown = null; }); resolve(v); };
+      const ok = () => { const v = inputs.map((x) => x.value); const m = check ? check(v) : ''; if (m) { er.textContent = m; er.hidden = false; return; } done(fields.length ? v : true); };
+      inputs.forEach((x, i) => { x.onkeydown = (e) => { if (e.key === 'Enter') { if (inputs[i + 1]) inputs[i + 1].focus(); else ok(); } }; });
+      $('dlgYes').onclick = ok; $('dlgNo').onclick = () => done(null);
     });
   }
   function undoLast() { wz.undoSeq = cal ? cal.resultSeq : -1; act(() => dev.send(P.cmd.char('U'))); }
@@ -806,7 +840,7 @@
 
   // Kniewinkel ueber die Zeit: 5 Punkte pro Sekunde, 15 Minuten
   const chartBuf = []; let lastChartT = 0;
-  const CH = { ok: '#2e8b57', approach: '#e8a20c', over: '#d0342c' };
+  const CH = {};   // Farben der Linie: aus dem Design (hell/dunkel), beim Zeichnen gelesen
   let chartSpan = 300;
   try { chartSpan = +(localStorage.getItem('js.span') || 300); } catch (e) { /* Standard */ }
   function pushChart(l) {
@@ -825,6 +859,8 @@
     if (!w) return;
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    CH.ok = css('--moos'); CH.approach = css('--bernstein'); CH.over = css('--rot');
+    const cGrau = css('--grau'), cTrack = css('--track'), dark = document.documentElement.dataset.theme === 'dark';
     const now = performance.now();
     const pts = chartBuf.filter((p) => now - p[0] <= span), vals = pts.filter((p) => p[1] !== null);
     // Zeichenfläche rechts der Skala und über der Zeitachse: die Linie läuft nie durch die Beschriftung
@@ -838,10 +874,10 @@
     vals.forEach((p) => { lo = Math.min(lo, p[1] - 5); hi = Math.max(hi, p[1] + 5); });
     // Bereiche: unter der Grenze rot, Vorwarnung gelb
     const yl = Math.min(B, Math.max(T, Y(lim)));
-    g.fillStyle = 'rgba(208,52,44,.13)'; g.fillRect(L, yl, R - L, B - yl);
-    if (zone > 0) { const yz = Math.min(B, Math.max(T, Y(lim + zone))); g.fillStyle = 'rgba(242,183,61,.16)'; g.fillRect(L, yz, R - L, yl - yz); }
+    g.fillStyle = dark ? 'rgba(239,91,82,.16)' : 'rgba(208,52,44,.13)'; g.fillRect(L, yl, R - L, B - yl);
+    if (zone > 0) { const yz = Math.min(B, Math.max(T, Y(lim + zone))); g.fillStyle = dark ? 'rgba(240,180,41,.14)' : 'rgba(242,183,61,.16)'; g.fillRect(L, yz, R - L, yl - yz); }
     // Skala links, Gitter nur in der Zeichenfläche
-    g.fillStyle = '#5b6b76'; g.strokeStyle = '#e4eaed'; g.lineWidth = 1; g.textAlign = 'right'; g.textBaseline = 'middle';
+    g.fillStyle = cGrau; g.strokeStyle = cTrack; g.lineWidth = 1; g.textAlign = 'right'; g.textBaseline = 'middle';
     // Schrittweite so, dass die Skalenwerte mindestens 22 px auseinander liegen
     const stepDeg = [10, 15, 30, 45, 60, 90].find((d) => d / (hi - lo) * (B - T) >= 22) || 90;
     for (let a = Math.ceil(lo / stepDeg) * stepDeg; a <= hi; a += stepDeg) {
@@ -849,10 +885,10 @@
       g.beginPath(); g.moveTo(L, y); g.lineTo(R, y); g.stroke();
       g.fillText(a + '°', L - 7, Math.min(B - 4, Math.max(T + 4, y)));
     }
-    g.strokeStyle = '#d0342c'; g.setLineDash([6, 4]); g.beginPath(); g.moveTo(L, Y(lim)); g.lineTo(R, Y(lim)); g.stroke(); g.setLineDash([]);
+    g.strokeStyle = CH.over; g.setLineDash([6, 4]); g.beginPath(); g.moveTo(L, Y(lim)); g.lineTo(R, Y(lim)); g.stroke(); g.setLineDash([]);
     // Zeitachse unter der Zeichenfläche
     const mins = span / 60000;
-    g.textBaseline = 'alphabetic'; g.textAlign = 'left'; g.fillStyle = '#5b6b76';
+    g.textBaseline = 'alphabetic'; g.textAlign = 'left'; g.fillStyle = cGrau;
     g.fillText(mins >= 1 ? `vor ${mins} min` : `vor ${span / 1000} s`, L, h - 4);
     g.textAlign = 'right'; g.fillText('jetzt', R, h - 4); g.textAlign = 'left';
     // Linie, je Abschnitt in der Farbe des Zustands; abgeschnitten an der Zeichenfläche
@@ -884,15 +920,62 @@
   // ---------------------------------------------------------------------------
   //  Mehr
   // ---------------------------------------------------------------------------
+  // ---- PIN-Schutz ----------------------------------------------------------------
+  const pinField = (ph) => ({ type: 'password', inputmode: 'numeric', max: 6, placeholder: ph });
+  const pinCheck = (v) => !P.validPin(v[0]) ? 'Die PIN hat 4 bis 6 Ziffern.' : (v.length > 1 && v[0] !== v[1] ? 'Die beiden Eingaben sind verschieden.' : '');
+  const newProto = () => status && status.proto >= 4;
   function renderPair() {
-    const t = $('pairText'), bp = $('btnPair'), bf = $('btnForget');
-    if (conn !== 'connected') { t.textContent = 'Nicht verbunden.'; bp.hidden = bf.hidden = true; return; }
-    if (auth.authed) { t.textContent = 'Dieses Handy ist gekoppelt und darf Einstellungen ändern. Andere Handys können nur zusehen.'; bp.hidden = true; bf.hidden = false; }
-    else if (auth.windowOpen) { t.textContent = auth.ownerSet ? 'Ein anderes Handy ist gekoppelt. Koppeln ersetzt es durch dieses Handy.' : 'Noch kein Handy gekoppelt.'; bp.hidden = false; bf.hidden = true; }
-    else { t.textContent = 'Koppeln ist nur in den ersten 60 Sekunden nach dem Einschalten möglich: Gerät aus- und einschalten, sofort verbinden, dann hier koppeln.'; bp.hidden = bf.hidden = true; }
+    const t = $('pinText'), be = $('btnPinEnter'), bs = $('btnPinSet'), bo = $('btnPinOff'), sum = $('sumPin');
+    be.hidden = bs.hidden = bo.hidden = true;
+    if (conn !== 'connected') { t.textContent = 'Nicht verbunden.'; sum.textContent = ''; return; }
+    if (!newProto()) { t.textContent = 'Der PIN-Schutz braucht Firmware 3.1 oder neuer.'; sum.textContent = ''; return; }
+    if (!auth.pinSet) {
+      sum.textContent = 'aus';
+      t.textContent = 'Ohne PIN darf jedes Handy in Reichweite Einstellungen ändern. Mit einer PIN braucht jedes neue Handy einmal diese PIN.';
+      bs.hidden = false; bs.textContent = 'PIN festlegen';
+    } else if (auth.authed) {
+      sum.textContent = 'an';
+      t.textContent = 'Geschützt. Dieses Handy kennt die PIN. PIN vergessen: am Gerät die Taste BOOT 5 Sekunden halten, dann ist der Schutz aus.';
+      bs.hidden = false; bs.textContent = 'PIN ändern'; bo.hidden = false;
+    } else {
+      sum.textContent = 'an';
+      t.textContent = auth.locked ? `Zu viele falsche Versuche. Neuer Versuch in ${auth.lockS} s.` : 'Dieses Handy kennt die PIN noch nicht und kann nur zusehen.';
+      be.hidden = !!auth.locked;
+    }
   }
-  $('btnPair').addEventListener('click', async () => { try { const ok = await dev.pair(); toast(ok ? 'Gekoppelt. Das Gerät hat zur Bestätigung vibriert.' : 'Koppeln nicht möglich. Das Zeitfenster ist abgelaufen.', !ok); } catch (e) { toast('Koppeln fehlgeschlagen.', true); } });
-  $('btnForget').addEventListener('click', async () => { if (await ask('Kopplung löschen? Danach kann dieses Handy nur noch zusehen.', 'Löschen', 'Abbrechen')) act(() => dev.forget(), 'Kopplung gelöscht'); });
+  async function pinEnter() {
+    const v = await form({ title: 'PIN eingeben', text: `PIN von «${dev.name}»`, fields: [pinField('PIN')], yes: 'Weiter', check: pinCheck });
+    if (!v) return;
+    try { const ok = await dev.enterPin(v[0]); toast(ok ? 'PIN richtig. Dieses Handy darf jetzt Einstellungen ändern.' : (auth.locked ? `PIN falsch. Gesperrt für ${auth.lockS} s.` : 'PIN falsch.'), !ok); }
+    catch (e) { toast('Das hat nicht geklappt. Verbindung prüfen.', true); }
+  }
+  $('btnPinEnter').addEventListener('click', pinEnter);
+  $('btnPinSet').addEventListener('click', async () => {
+    const v = await form({ title: auth.pinSet ? 'PIN ändern' : 'PIN festlegen', text: '4 bis 6 Ziffern. Neue Handys brauchen sie einmal, dieses Handy merkt sie sich.', fields: [pinField('Neue PIN'), pinField('Nochmals')], yes: 'Speichern', check: pinCheck });
+    if (v) act(() => dev.setPin(v[0]), 'PIN gespeichert. Das Gerät hat zur Bestätigung vibriert.');
+  });
+  $('btnPinOff').addEventListener('click', async () => { if (await ask('PIN entfernen? Danach darf jedes Handy in Reichweite Einstellungen ändern.', 'Entfernen', 'Abbrechen')) act(() => dev.clearPin(), 'PIN entfernt'); });
+
+  // ---- Geraet und Name ----------------------------------------------------------------
+  let nameEditing = false;
+  $('devNameIn').addEventListener('focus', () => { nameEditing = true; });
+  $('devNameIn').addEventListener('blur', () => { nameEditing = false; });
+  function renderDevTile() {
+    const nm = dev ? dev.name : 'JointSense';
+    $('sumDev').textContent = conn === 'connected' ? nm : 'nicht verbunden';
+    const ok = conn === 'connected' && newProto();
+    $('devNameIn').disabled = !ok; $('btnRename').disabled = !ok;
+    if (!nameEditing) $('devNameIn').value = conn === 'connected' ? nm : '';
+    $('hRename').textContent = conn === 'connected' && !newProto() ? 'Umbenennen braucht Firmware 3.1 oder neuer.' : 'So heisst das Gerät in der App und in der Bluetooth-Liste. Leer lassen für den Standardnamen.';
+    $('btnDisc').hidden = conn !== 'connected';
+  }
+  $('btnRename').addEventListener('click', () => {
+    const n = $('devNameIn').value.trim();
+    if (P.nameBytes(n).length > 19) { toast('Der Name ist zu lang (höchstens 19 Zeichen, Umlaute zählen doppelt).', true); return; }
+    $('devNameIn').blur();
+    act(() => dev.rename(n), 'Name gespeichert');
+  });
+
   $('btnMotorCal').addEventListener('click', () => act(() => dev.send(P.cmd.motorCal()), 'Der Motor läuft jetzt etwa 1 Sekunde.'));
   $('btnInfo').addEventListener('click', () => { if (conn === 'connected') dev.send(P.cmd.info()).catch(() => {}); });
   function renderDiag() {
@@ -914,6 +997,7 @@
   let wakeLock = null;
   async function applyWake() { try { if (prefs.wake && navigator.wakeLock && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); else if (wakeLock) { await wakeLock.release(); wakeLock = null; } } catch (e) { /* nicht unterstuetzt */ } }
   $('pWake').addEventListener('change', (e) => { prefs.wake = e.target.checked; savePrefs(); applyWake(); });
+  document.querySelectorAll('#themeSegs button').forEach((b) => b.addEventListener('click', () => { prefs.theme = b.dataset.theme; savePrefs(); applyTheme(); }));
   document.addEventListener('visibilitychange', applyWake);
   $('appVer').textContent = APP_VERSION;
   $('verApp').textContent = 'App ' + APP_VERSION;
@@ -923,9 +1007,8 @@
   //  Start
   // ---------------------------------------------------------------------------
   if (!window.KneeDevice.supported) { $('noBle').hidden = false; $('btnStart').disabled = true; }
-  if (window.KNEE_PREVIEW) { $('noBle').className = 'note'; $('noBle').textContent = 'Vorschau ohne Bluetooth: Tippe auf «Ohne Gerät ansehen».'; }
   if (!window.KNEE_PREVIEW && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
-  renderConn(); renderPair(); applyWake();
+  renderConn(); renderPair(); renderDevTile(); applyWake(); applyTheme();
   // Zum Testen der Oberflaeche:  index.html?demo  bzw.  ?demo&view=alarm
   const qs = new URLSearchParams(location.search);
   if (qs.has('rig')) { prefs.rig = qs.get('rig') === 'rig' ? 'rig' : 'leg'; }

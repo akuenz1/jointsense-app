@@ -1,8 +1,10 @@
-// JointSense - Bluetooth-Protokoll Version 3 (Dekoder/Enkoder)
+// JointSense - Bluetooth-Protokoll Version 4 (Dekoder/Enkoder)
 // Version 2 (KneeAngle 2.1): neues CAL-Paket (20 Byte) fuer die gefuehrten Kalibrier-Ablaeufe,
 // Befehle 'n' (weiter/bestaetigen) und 'U' (rueckgaengig).
 // Version 3 (JointSense 3.0): Messraten im STATUS-Paket in 4-Hz-Schritten, Akku-Ladestand in % im
 // LIVE-Paket (Byte 9, 0xFF = unbekannt), Vorhersage fest im Geraet (ab Firmware 3.0c aus, meldet 0).
+// Version 4 (JointSense 3.1): eigene PIN statt 60-s-Kopplungsfenster (AUTH-Paket 20 Byte mit Salz),
+// Geraetename (Merkmal NAME, Befehl SET_NAME), Befehl SET_PIN; FORGET entfernt die PIN.
 // Laeuft im Browser (window.KneeProto) und in Node (module.exports) - siehe test/protocol.test.js
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -13,10 +15,11 @@
   const UUID = {
     service: uuid('0001'), live: uuid('0002'), status: uuid('0003'), cal: uuid('0004'), msg: uuid('0005'),
     cmd: uuid('0006'), settings: uuid('0007'), log: uuid('0008'), auth: uuid('0009'), diag: uuid('000a'),
-    caltime: uuid('000b')   // ab Firmware 2.2
+    caltime: uuid('000b'),  // ab Firmware 2.2
+    name: uuid('000c')      // ab Firmware 3.1
   };
-  const PROTO_VERSION = 3;
-  const CMD = { CHAR: 1, ZERO_REF: 2, MUTE: 3, VIB_TEST: 4, SET_TIME: 5, LOG_READ: 6, LOG_CLEAR: 7, STATS_RESET: 8, MOTOR_CAL: 9, INFO: 10, FORGET: 12 };
+  const PROTO_VERSION = 4;
+  const CMD = { CHAR: 1, ZERO_REF: 2, MUTE: 3, VIB_TEST: 4, SET_TIME: 5, LOG_READ: 6, LOG_CLEAR: 7, STATS_RESET: 8, MOTOR_CAL: 9, INFO: 10, FORGET: 12, SET_PIN: 13, SET_NAME: 14 };
   const STATE = { NORMAL: 0, APPROACH: 1, OVER: 2, INVALID: 3, CAL: 4 };
   const SILENCE = { NONE: 0, MUTED: 1, OFF: 2 };
   const AF = { PREDICTED: 1, UNRELIABLE: 2, MOTOR: 4, PAUSED: 8, BATT_LOW: 16, BATT_CRIT: 32, MOTOR_FAULT: 64 };
@@ -131,11 +134,28 @@
     }
     return null;
   }
+  // AUTH (20 Byte): [0] Bits 0 berechtigt, 1 PIN gesetzt, 2 gesperrt, 3-7 Sperre in 2-s-Schritten; [1..16] Zufallswert; [17..19] Salz
   function decodeAuth(buf) {
     const d = dv(buf);
-    if (d.byteLength < 19) return null;
-    return { authed: !!d.getUint8(0), windowOpen: !!d.getUint8(1), ownerSet: !!d.getUint8(2), nonce: new Uint8Array(d.buffer.slice(d.byteOffset + 3, d.byteOffset + 19)) };
+    if (d.byteLength < 20) return null;
+    const f = d.getUint8(0), u = (a, b) => new Uint8Array(d.buffer.slice(d.byteOffset + a, d.byteOffset + b));
+    return { authed: !!(f & 1), pinSet: !!(f & 2), locked: !!(f & 4), lockS: (f >> 3) * 2, nonce: u(1, 17), salt: u(17, 20) };
   }
+  // Pruefwert der PIN: die ersten 16 Byte von SHA-256("JointSense-PIN" || Salz || PIN). Die PIN selbst verlaesst das Handy nie.
+  async function pinKey(pin, salt) {
+    const pre = new TextEncoder().encode('JointSense-PIN'), p = new TextEncoder().encode(String(pin));
+    const inp = new Uint8Array(pre.length + salt.length + p.length); inp.set(pre, 0); inp.set(salt, pre.length); inp.set(p, pre.length + salt.length);
+    return new Uint8Array(await crypto.subtle.digest('SHA-256', inp)).slice(0, 16);
+  }
+  const validPin = (pin) => /^[0-9]{4,6}$/.test(String(pin));
+  // NAME (bis 20 Byte): [0] Laenge, [1..] Name in UTF-8
+  function decodeName(buf) {
+    const d = dv(buf);
+    if (d.byteLength < 1) return null;
+    const n = Math.min(d.getUint8(0), d.byteLength - 1);
+    return new TextDecoder().decode(new Uint8Array(d.buffer.slice(d.byteOffset + 1, d.byteOffset + 1 + n)));
+  }
+  const nameBytes = (name) => new TextEncoder().encode(String(name).trim());
   async function authMac(token, nonce) {
     const inp = new Uint8Array(32); inp.set(token, 0); inp.set(nonce, 16);
     const h = await crypto.subtle.digest('SHA-256', inp);
@@ -149,10 +169,11 @@
     setTime: (epoch) => { const b = new Uint8Array(5), d = new DataView(b.buffer); b[0] = CMD.SET_TIME; d.setUint32(1, epoch >>> 0, true); return b; },
     logRead: (start) => { const b = new Uint8Array(3), d = new DataView(b.buffer); b[0] = CMD.LOG_READ; d.setUint16(1, start || 0, true); return b; },
     logClear: () => Uint8Array.of(CMD.LOG_CLEAR), statsReset: () => Uint8Array.of(CMD.STATS_RESET),
-    motorCal: () => Uint8Array.of(CMD.MOTOR_CAL), info: () => Uint8Array.of(CMD.INFO), forget: () => Uint8Array.of(CMD.FORGET)
+    motorCal: () => Uint8Array.of(CMD.MOTOR_CAL), info: () => Uint8Array.of(CMD.INFO), forget: () => Uint8Array.of(CMD.FORGET),
+    setPin: (key) => { const b = new Uint8Array(17); b[0] = CMD.SET_PIN; b.set(key, 1); return b; },
+    setName: (name) => { const n = nameBytes(name); if (n.length > 19) throw new Error('Name zu lang'); const b = new Uint8Array(1 + n.length); b[0] = CMD.SET_NAME; b.set(n, 1); return b; }
   };
   const auth = {
-    claim: (token) => { const b = new Uint8Array(17); b[0] = 1; b.set(token, 1); return b; },
     prove: (mac) => { const b = new Uint8Array(17); b[0] = 2; b.set(mac, 1); return b; }
   };
   // CALTIME (13 Byte, ab Firmware 2.2): Zeitpunkte der Kalibrierungen, Unix-Zeit in s, 0 = unbekannt
@@ -164,5 +185,5 @@
   }
 
   return { UUID, PROTO_VERSION, CMD, STATE, SILENCE, AF, SF, CB, HB, CALMODE, JSTEP, HINT, RESULT, decodeLive, decodeStatus, decodeCal, decodeDiag, decodeCalTime,
-           decodeSettings, encodeSettings, validateSettings, decodeLog, decodeAuth, authMac, cmd, auth };
+           decodeSettings, encodeSettings, validateSettings, decodeLog, decodeAuth, authMac, pinKey, validPin, decodeName, nameBytes, cmd, auth };
 });

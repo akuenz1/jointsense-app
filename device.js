@@ -1,4 +1,4 @@
-// JointSense - Verbindung zum Geraet (Web Bluetooth) und Demo-Geraet ohne Hardware
+// JointSense - Verbindung zum Geraet (Web Bluetooth) und Ansicht ohne Geraet (?demo, fuer Tests und Bilder)
 'use strict';
 (function () {
   const P = window.KneeProto;
@@ -16,7 +16,7 @@
     constructor() {
       super();
       this.dev = null; this.ch = {}; this.q = Promise.resolve();
-      this.wantConnected = false; this.connected = false; this.retry = 0; this.authState = { authed: false, windowOpen: false, ownerSet: false };
+      this.wantConnected = false; this.connected = false; this.retry = 0; this.authState = { authed: false, pinSet: false, locked: false, lockS: 0 };
       this.name = 'JointSense';
     }
     static get supported() { return !!(navigator.bluetooth && navigator.bluetooth.requestDevice); }
@@ -70,6 +70,15 @@
           const t = P.decodeCalTime(await this.ch.caltime.readValue()); if (t) this.emit('caltimes', t);
         } catch (e) { this.emit('caltimes', null); }
       }
+      // ab Firmware 3.1: eigener Geraetename
+      this.ch.name = null;
+      try { this.ch.name = await svc.getCharacteristic(P.UUID.name); } catch (e) { /* aeltere Firmware */ }
+      if (this.ch.name) {
+        try {
+          await sub('name', (v) => this._onName(P.decodeName(v)));
+          this._onName(P.decodeName(await this.ch.name.readValue()));
+        } catch (e) { /* Name aus der Werbung behalten */ }
+      }
       // Anfangswerte
       const st = P.decodeStatus(await this.ch.status.readValue()); if (st) this.emit('status', st);
       const se = P.decodeSettings(await this.ch.settings.readValue()); if (se) this.emit('settings', se);
@@ -81,34 +90,54 @@
       this.emit('conn', 'connected');
     }
 
-    _tokenKey() { return 'js.token.' + (this.dev ? this.dev.id : 'x'); }
-    _loadToken() {
-      try { const s = localStorage.getItem(this._tokenKey()); if (!s) return null; return Uint8Array.from(s.match(/../g).map((x) => parseInt(x, 16))); } catch (e) { return null; }
+    _onName(n) { if (n) { this.name = n; this.emit('name', n); } }
+    // Pruefwert der PIN pro Geraet im Handy (nie die PIN selbst)
+    _keyName() { return 'js.pin.' + (this.dev ? this.dev.id : 'x'); }
+    _loadKey() {
+      try { const s = localStorage.getItem(this._keyName()); if (!s) return null; return Uint8Array.from(s.match(/../g).map((x) => parseInt(x, 16))); } catch (e) { return null; }
     }
-    _storeToken(t) { try { localStorage.setItem(this._tokenKey(), Array.from(t).map((x) => x.toString(16).padStart(2, '0')).join('')); } catch (e) { /* ohne Speicher: Kopplung gilt nur bis zum Schliessen */ } this._token = t; }
-    _onAuth(a) { if (!a) return; this.authState = { authed: a.authed, windowOpen: a.windowOpen, ownerSet: a.ownerSet }; this._nonce = a.nonce; this.emit('auth', this.authState); }
+    _storeKey(k) {
+      this._key = k;
+      try { if (k) localStorage.setItem(this._keyName(), Array.from(k).map((x) => x.toString(16).padStart(2, '0')).join('')); else localStorage.removeItem(this._keyName()); } catch (e) { /* ohne Speicher: gilt bis zum Schliessen */ }
+    }
+    _onAuth(a) { if (!a) return; this.authState = { authed: a.authed, pinSet: a.pinSet, locked: a.locked, lockS: a.lockS }; this._nonce = a.nonce; this._salt = a.salt; this.emit('auth', this.authState); }
+    async _readAuth() { this._onAuth(P.decodeAuth(await this.ch.auth.readValue())); return this.authState; }
+    async _prove(key) {
+      const mac = await P.authMac(key, this._nonce);
+      await this._write('auth', P.auth.prove(mac));
+      return this._readAuth();
+    }
 
+    // Ohne PIN darf jedes Handy aendern (das Geraet meldet "berechtigt"). Mit PIN: gespeicherten Pruefwert verwenden.
     async _authenticate() {
-      this._onAuth(P.decodeAuth(await this.ch.auth.readValue()));
-      const token = this._token || this._loadToken();
-      if (token && this.authState.ownerSet) {
-        const mac = await P.authMac(token, this._nonce);
-        await this._write('auth', P.auth.prove(mac));
-        this._onAuth(P.decodeAuth(await this.ch.auth.readValue()));
-        if (this.authState.authed) { this._token = token; return; }
-      }
-      // fabrikneues Geraet im Kopplungsfenster: automatisch koppeln
-      if (!this.authState.authed && this.authState.windowOpen && !this.authState.ownerSet) await this.pair();
+      try { localStorage.removeItem('js.token.' + this.dev.id); } catch (e) { /* alte Kopplung (bis App 4.1) */ }
+      await this._readAuth();
+      if (this.authState.authed || !this.authState.pinSet || this.authState.locked) return;
+      const key = this._key || this._loadKey();
+      if (key) { await this._prove(key); if (!this.authState.authed) this._storeKey(null); }
     }
-    // dieses Handy als Besitzer hinterlegen (nur im Kopplungsfenster moeglich)
-    async pair() {
-      const token = crypto.getRandomValues(new Uint8Array(16));
-      await this._write('auth', P.auth.claim(token));
-      this._onAuth(P.decodeAuth(await this.ch.auth.readValue()));
-      if (this.authState.authed) this._storeToken(token);
+    // PIN eingeben (neues Handy): true = berechtigt
+    async enterPin(pin) {
+      await this._readAuth();
+      if (this.authState.locked) return false;
+      const key = await P.pinKey(pin, this._salt);
+      await this._prove(key);
+      if (this.authState.authed) this._storeKey(key);
       return this.authState.authed;
     }
-    async forget() { await this.send(P.cmd.forget()); try { localStorage.removeItem(this._tokenKey()); } catch (e) { /* egal */ } this._token = null; this._onAuth(P.decodeAuth(await this.ch.auth.readValue())); }
+    // PIN festlegen oder aendern (nur berechtigt)
+    async setPin(pin) {
+      const key = await P.pinKey(pin, this._salt);
+      await this.send(P.cmd.setPin(key));
+      this._storeKey(key);
+      return this._readAuth();
+    }
+    // PIN entfernen: danach darf wieder jedes Handy aendern
+    async clearPin() { await this.send(P.cmd.forget()); this._storeKey(null); return this._readAuth(); }
+    async rename(name) {
+      await this.send(P.cmd.setName(name));
+      if (this.ch.name) this._onName(P.decodeName(await this.ch.name.readValue()));
+    }
 
     _write(k, bytes) {
       // GATT erlaubt nur einen Vorgang gleichzeitig -> Warteschlange
@@ -144,8 +173,8 @@
     constructor(opts) {
       super();
       this.opts = opts || {};
-      this.name = 'JointSense-DEMO'; this.connected = false; this.authState = { authed: true, windowOpen: true, ownerSet: true };
-      this.set = { alarmEnabled: true, limit: -5, zone: 10, hyst: 2, approachOn: true, approachMoveOnly: true, rateMin: 1, rateMax: 5, approachStrength: 20, alarmStrength: 100, predictMs: 20, cautiousOn: true, kSigma: 2, batteryPresent: true, motorOn: true };
+      this.name = 'JointSense-A1B2'; this.connected = false; this.authState = { authed: true, pinSet: false, locked: false, lockS: 0 }; this.pin = null;
+      this.set = { alarmEnabled: true, limit: -5, zone: 10, hyst: 2, approachOn: true, approachMoveOnly: true, rateMin: 1, rateMax: 5, approachStrength: 20, alarmStrength: 100, predictMs: 0, cautiousOn: true, kSigma: 2, batteryPresent: true, motorOn: true };
       this.t = 0; this.over = false; this.overCount = 0; this.approachCount = 0; this.zone = false; this.min = null; this.max = null;
       this.muteUntil = 0;
       this.calBits = P.CB.ACC1 | P.CB.ACC2 | P.CB.GYR1 | P.CB.GYR2 | P.CB.JOINT | P.CB.ZERO | P.CB.MOTORCAL;
@@ -161,12 +190,14 @@
     }
     static get supported() { return true; }
     async connect() {
-      this.connected = true; this.emit('conn', 'connected'); this.emit('auth', this.authState); this.emit('settings', { ...this.set }); this._emitCal(); this._emitTimes();
+      this.connected = true; this.emit('name', this.name); this.emit('conn', 'connected'); this.emit('auth', this.authState); this.emit('settings', { ...this.set }); this._emitCal(); this._emitTimes();
       this.timer = setInterval(() => this._tick(), 50); this.slow = setInterval(() => this._status(), 1000); this._status();
     }
     disconnect() { clearInterval(this.timer); clearInterval(this.slow); this.connected = false; this.emit('conn', 'disconnected'); }
-    async pair() { return true; }
-    async forget() { }
+    async enterPin(pin) { const ok = pin === this.pin; this.authState = { ...this.authState, authed: ok || !this.authState.pinSet }; this.emit('auth', this.authState); return ok; }
+    async setPin(pin) { this.pin = String(pin); this.authState = { ...this.authState, pinSet: true, authed: true }; this.emit('auth', this.authState); return this.authState; }
+    async clearPin() { this.pin = null; this.authState = { ...this.authState, pinSet: false, authed: true }; this.emit('auth', this.authState); return this.authState; }
+    async rename(name) { this.name = String(name).trim() || 'JointSense-A1B2'; this.emit('name', this.name); }
     async writeSettings(s) { this.set = { ...s }; this.emit('settings', { ...this.set }); return this.set; }
     async send(b) {
       const d = new DataView(b.buffer);
@@ -181,7 +212,7 @@
         case P.CMD.LOG_READ: this.log.forEach((r, i) => setTimeout(() => this.emit('log', r), 30 * i)); setTimeout(() => this.emit('log', { end: true, count: this.log.length, deviceTime: Math.floor(Date.now() / 1000), timeValid: true }), 30 * this.log.length + 30); break;
         case P.CMD.LOG_CLEAR: this.log = []; break;
         case P.CMD.STATS_RESET: this.overCount = 0; this.approachCount = 0; this.min = this.max = null; this._status(); break;
-        case P.CMD.INFO: this.emit('msg', '\n--- Demo-Geraet ---\nKeine echte Hardware verbunden.\n'); break;
+        case P.CMD.INFO: this.emit('msg', '\n--- Statusbericht ---\nAnsicht ohne Geraet.\n'); break;
         default: break;
       }
     }
@@ -320,7 +351,7 @@
     _status() {
       const rem = Math.max(0, Math.round((this.muteUntil - Date.now()) / 1000));
       const old = !!this.opts.oldfw;
-      this.emit('status', { proto: old ? 2 : 3, fw: old ? '2.2' : '3.0', calBits: this.calBits, hwBits: P.HB.S1 | P.HB.S2 | P.HB.MOTOR | P.HB.AUTHED | P.HB.OWNER | P.HB.TIME | (this.set.batteryPresent ? P.HB.BATT : 0),
+      this.emit('status', { proto: old ? 2 : 4, fw: old ? '2.2' : '3.1', calBits: this.calBits, hwBits: P.HB.S1 | P.HB.S2 | P.HB.MOTOR | (this.authState.authed ? P.HB.AUTHED : 0) | (this.authState.pinSet ? P.HB.OWNER : 0) | P.HB.TIME | (this.set.batteryPresent ? P.HB.BATT : 0),
                             battMv: this.set.batteryPresent ? 3910 : 0, muteRemainS: rem, alarmOff: !this.set.alarmEnabled,
                             overCount: this.overCount, approachCount: this.approachCount, min: this.min, max: this.max, rateS1: 832, rateS2: 832, warnCount: 0 });
       this.emit('diag', { rtLoopMaxUs: 1180, latLastMs: 0.6, latMaxMs: 1.9, tempS1: 29, tempS2: 27, gaps1: 0, gaps2: 0, i2cErr: 0, rssi: -58, mainLoopMaxMs: 6, lost: 0, kfRejects: 0 });
