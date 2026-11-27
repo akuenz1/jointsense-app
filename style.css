@@ -238,6 +238,41 @@ body.fit-live { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) 
 .spark canvas { width: 100%; height: clamp(110px, 18vh, 200px); display: block; }
 #view-live .spark .cardhead { margin-bottom: 4px; }
 #view-live .spark .legend { margin-top: 4px; }
+/* Akku (ab App 4.4.0): Blitz im Akku oben rechts, grosse Akku-Karte beim Laden */
+.bicon .bbolt { fill: #fff; stroke: var(--schiefer); stroke-width: .9; stroke-linejoin: round; paint-order: stroke; }
+.akku .cardhead { display: flex; align-items: center; justify-content: space-between; }
+.akku-state { font-size: 14px; font-weight: 600; color: #fff; background: var(--moos); border-radius: 999px; padding: 3px 10px; }
+.akku-body { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.akku-big { width: min(100%, 300px); height: auto; display: block; margin: 4px auto 0; overflow: visible; }
+.ab-body { fill: none; stroke: var(--schiefer); stroke-width: 6; }
+:root[data-theme="dark"] .ab-body { stroke: var(--grau); }
+.ab-cap { fill: var(--schiefer); }
+:root[data-theme="dark"] .ab-cap { fill: var(--grau); }
+.ab-track { fill: var(--neutral-fill); }
+.ab-fill { fill: var(--moos); transition: width .6s ease; }
+.akku[data-lvl="low"] .ab-fill { fill: var(--bernstein); }
+.akku[data-lvl="crit"] .ab-fill { fill: var(--rot); }
+.ab-bolt { fill: #fff; stroke: var(--schiefer); stroke-width: 3; stroke-linejoin: round; paint-order: stroke; }
+.akku[data-s="full"] .ab-bolt { display: none; }
+.ab-check { display: none; fill: none; stroke: #fff; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
+.akku[data-s="full"] .ab-check { display: inline; }
+.akku[data-s="full"] #akkuEta { color: var(--moos); }
+body[data-charge="1"] #view-live .readout .angle:empty { display: none; }
+/* Laden: am Ende der Fuellung waechst immer wieder ein Stueck nach (gleiches Gruen) */
+.ab-grow { fill: var(--moos); display: none; transform-box: fill-box; transform-origin: left center; }
+.akku[data-lvl="low"] .ab-grow { fill: var(--bernstein); }
+.akku[data-lvl="crit"] .ab-grow { fill: var(--rot); }
+.akku[data-s="charging"] .ab-grow { display: inline; animation: akkuGrow 1.8s ease-in-out infinite; }
+.akku[data-s="charging"] .ab-bolt { animation: akkuBolt 1.8s ease-in-out infinite; transform-origin: 120px 58px; }
+@keyframes akkuGrow { 0% { transform: scaleX(0); } 70%, 100% { transform: scaleX(1); } }
+@keyframes akkuBolt { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) { .akku .ab-grow, .akku .ab-bolt { animation: none !important; } }
+.akku-facts { width: 100%; }
+.akku-facts b { font-size: 30px; }
+.akku-note { margin: 10px 2px 0; font-size: 14px; color: var(--grau); text-align: center; }
+/* Laden auf dem Handy: die Akku-Karte ersetzt "Letzte 2 Minuten" */
+body[data-charge="1"] #view-live .spark { display: none; }
+
 
 /* ---------- Kalibrieren ---------- */
 .status { display: flex; gap: 14px; align-items: center; }
@@ -555,6 +590,16 @@ ol.todo li::before { content: counter(s); width: 28px; height: 28px; border-radi
   #view-live .livecol .spark canvas { flex: 1 1 auto; height: auto; min-height: 150px; }
   #view-live .facts { padding: 16px 8px; }
   #view-live .facts b { font-size: 34px; }
+  body[data-charge="1"] #view-live .spark { display: flex; }
+  #view-live .akku { margin-bottom: 12px; }
+  #view-live .akku-body { flex-direction: row; align-items: center; gap: 18px; }
+  #view-live .akku-big { width: 46%; max-width: 260px; margin: 0; }
+  #view-live .akku-facts { flex: 1 1 auto; grid-template-columns: 1fr; gap: 6px; }
+  #view-live .akku-facts div { border-left: 0; text-align: left; display: flex; align-items: baseline; justify-content: space-between; gap: 10px; border-top: 1px solid var(--linie); padding-top: 6px; }
+  #view-live .akku-facts div:first-child { border-top: 0; padding-top: 0; }
+  #view-live .akku-facts b { font-size: 28px; order: 2; }
+  #view-live .akku-facts span { order: 1; font-size: 15px; }
+  #view-live .akku-note { text-align: left; }
 }
 
 @media (min-width: 1100px) {

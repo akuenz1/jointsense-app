@@ -18,7 +18,7 @@
     <svg class="logo" viewBox="0 0 48 48" aria-hidden="true"><use href="#logoMark"/></svg>
     <span class="name"><b id="devName">JointSense</b><small><i class="dot" id="connDot"></i><span id="connText">nicht verbunden</span></small></span>
   </button>
-  <div class="batt" id="batt" data-lvl="ok" role="button" tabindex="0" hidden><span class="bpct" id="battPct">–</span><svg class="bicon" viewBox="0 0 30 15" aria-hidden="true"><rect class="bbody" x=".75" y=".75" width="25" height="13.5" rx="3.4"/><rect class="bcap" x="27" y="4.6" width="2.4" height="5.8" rx="1.1"/><rect class="bfill" id="battFill" x="2.75" y="2.75" width="21" height="9.5" rx="1.9"/></svg></div>
+  <div class="batt" id="batt" data-lvl="ok" role="button" tabindex="0" hidden><span class="bpct" id="battPct">–</span><svg class="bicon" viewBox="0 0 30 15" aria-hidden="true"><rect class="bbody" x=".75" y=".75" width="25" height="13.5" rx="3.4"/><rect class="bcap" x="27" y="4.6" width="2.4" height="5.8" rx="1.1"/><rect class="bfill" id="battFill" x="2.75" y="2.75" width="21" height="9.5" rx="1.9"/><path class="bbolt" id="battBolt" d="M14.6 1.6 8.2 8.4h4.1l-1.4 5 6.6-6.9h-4.2z" hidden/></svg></div>
 </header>
 
 <div id="banners"></div>
@@ -58,6 +58,31 @@
       <div><b id="fMin">–</b><span>kleinster Winkel</span></div>
       <div><b id="fMax">–</b><span>grösster Winkel</span></div>
       <div><b id="fOver" data-c="over">–</b><span>Überstreckungen</span></div>
+    </div>
+    <div class="card akku" id="akkuCard" data-s="charging" hidden>
+      <div class="cardhead"><h3>Akku</h3><span class="akku-state" id="akkuState">lädt</span></div>
+      <div class="akku-body">
+        <svg class="akku-big" viewBox="0 0 250 116" aria-hidden="true">
+          <defs>
+            <clipPath id="akkuClip"><rect x="12" y="12" width="206" height="92" rx="13"/></clipPath>
+          </defs>
+          <rect class="ab-body" x="4" y="4" width="222" height="108" rx="21"/>
+          <rect class="ab-cap" x="231" y="38" width="14" height="40" rx="6"/>
+          <g clip-path="url(#akkuClip)">
+            <rect class="ab-track" x="12" y="12" width="206" height="92"/>
+            <rect class="ab-fill" id="akkuFill" x="12" y="12" width="148" height="92"/>
+            <rect class="ab-grow" id="akkuGrow" x="160" y="12" width="18" height="92"/>
+          </g>
+          <path class="ab-bolt" d="M127 22 96 62h21l-7 32 33-42h-21z"/>
+          <path class="ab-check" d="M84 60l22 21 42-44"/>
+        </svg>
+        <div class="facts inner akku-facts">
+          <div><b id="akkuPct">–</b><span>Ladestand</span></div>
+          <div><b id="akkuMv">–</b><span>Spannung</span></div>
+          <div><b id="akkuEta">–</b><span id="akkuEtaLbl">bis voll</span></div>
+        </div>
+      </div>
+      <p class="akku-note" id="akkuNote">Messung pausiert, Alarm aus. Abstecken oder Bewegen startet die Messung wieder.</p>
     </div>
     <div class="card spark">
       <div class="cardhead"><h3>Letzte 2 Minuten</h3></div>

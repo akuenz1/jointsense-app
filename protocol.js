@@ -23,6 +23,8 @@
   const STATE = { NORMAL: 0, APPROACH: 1, OVER: 2, INVALID: 3, CAL: 4 };
   const SILENCE = { NONE: 0, MUTED: 1, OFF: 2 };
   const AF = { PREDICTED: 1, UNRELIABLE: 2, MOTOR: 4, PAUSED: 8, BATT_LOW: 16, BATT_CRIT: 32, MOTOR_FAULT: 64 };
+  // LIVE Byte 18 (ab Firmware 3.2): Laden
+  const CH = { PRESENT: 1, CHARGING: 2, FULL: 4, MODE: 8, ETA: 16 };
   const SF = { REST1: 1, REST2: 2, ACC: 4, VERT: 8, SAT: 16, NOSENSCAL: 32, BIAS: 64, REINIT: 128, NOZERO: 256, NOJOINT: 512, OFFLINE: 1024 };
   const CB = { ACC1: 1, ACC2: 2, GYR1: 4, GYR2: 8, JOINT: 16, ZERO: 32, LEVER: 64, MOTORCAL: 128 };
   const HB = { S1: 1, S2: 2, MOTOR: 4, BATT: 8, AUTHED: 16, WINDOW: 32, OWNER: 64, TIME: 128 };
@@ -46,8 +48,14 @@
       angle: a === null ? null : a / 100, sigma: d.getUint16(2, true) / 100, rate: d.getInt16(4, true) / 10,
       state: d.getUint8(6), silence: d.getUint8(7), aflags: d.getUint8(8), sysFlags: d.getUint16(10, true),
       effLimit: d.getInt16(12, true) / 100, seq: d.getUint16(14, true), ms: d.getUint16(16, true),
-      battPct: d.getUint8(9)   // ab Protokoll 3: Akku in % (0xFF unbekannt); vorher immer 0
+      battPct: d.getUint8(9),  // ab Protokoll 3: Akku in % (0xFF unbekannt); vorher immer 0
+      // ab Firmware 3.2 (20 Byte): Ladegeraet erkannt, laedt, voll, Lademodus; Restzeit in 5-min-Schritten (255 = unbekannt)
+      charge: d.byteLength >= 20 ? decodeCharge(d.getUint8(18), d.getUint8(19)) : null
     };
+  }
+  function decodeCharge(f, eta) {
+    return { present: !!(f & CH.PRESENT), charging: !!(f & CH.CHARGING), full: !!(f & CH.FULL), mode: !!(f & CH.MODE),
+             etaMin: (f & CH.ETA) && eta !== 255 ? eta * 5 : null };
   }
   function decodeStatus(buf) {
     const d = dv(buf);
@@ -184,6 +192,6 @@
     return { sensor: t(0), joint: t(4), zero: t(8), timeValid: !!(d.getUint8(12) & 1) };
   }
 
-  return { UUID, PROTO_VERSION, CMD, STATE, SILENCE, AF, SF, CB, HB, CALMODE, JSTEP, HINT, RESULT, decodeLive, decodeStatus, decodeCal, decodeDiag, decodeCalTime,
+  return { UUID, PROTO_VERSION, CMD, STATE, SILENCE, AF, SF, CH, CB, HB, CALMODE, JSTEP, HINT, RESULT, decodeLive, decodeStatus, decodeCal, decodeDiag, decodeCalTime,
            decodeSettings, encodeSettings, validateSettings, decodeLog, decodeAuth, authMac, pinKey, validPin, decodeName, nameBytes, cmd, auth };
 });

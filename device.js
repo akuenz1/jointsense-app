@@ -346,13 +346,14 @@
       const muted = this.muteUntil > Date.now();
       const state = this.cal.mode ? P.STATE.CAL : (!calib ? P.STATE.INVALID : (this.over ? P.STATE.OVER : (this.zone ? P.STATE.APPROACH : P.STATE.NORMAL)));
       const sil = !s.alarmEnabled ? P.SILENCE.OFF : (muted ? P.SILENCE.MUTED : P.SILENCE.NONE);
-      this.emit('live', { angle: measuring ? Math.round(a * 100) / 100 : null, sigma, rate, state, silence: sil, aflags: (this.over && !sil) ? P.AF.MOTOR : 0, sysFlags: (Math.abs(rate) < 1 ? 3 | 4 : 4) | (calib ? 0 : P.SF.NOJOINT), effLimit: eff, seq: this.seq++ & 0xffff, ms: (t * 1000) & 0xffff, battPct: this.set.batteryPresent ? 72 : 0xff });
+      this.emit('live', { angle: measuring ? Math.round(a * 100) / 100 : null, sigma, rate, state, silence: sil, aflags: (this.over && !sil) ? P.AF.MOTOR : 0, sysFlags: (Math.abs(rate) < 1 ? 3 | 4 : 4) | (calib ? 0 : P.SF.NOJOINT), effLimit: eff, seq: this.seq++ & 0xffff, ms: (t * 1000) & 0xffff, battPct: this.set.batteryPresent ? (this.opts.charge === 'voll' ? 100 : 72) : 0xff,
+        charge: this.opts.charge ? { present: true, charging: this.opts.charge !== 'voll', full: this.opts.charge === 'voll', mode: true, etaMin: this.opts.charge === 'voll' ? null : 85 } : null });
     }
     _status() {
       const rem = Math.max(0, Math.round((this.muteUntil - Date.now()) / 1000));
       const old = !!this.opts.oldfw;
       this.emit('status', { proto: old ? 2 : 4, fw: old ? '2.2' : '3.1', calBits: this.calBits, hwBits: P.HB.S1 | P.HB.S2 | P.HB.MOTOR | (this.authState.authed ? P.HB.AUTHED : 0) | (this.authState.pinSet ? P.HB.OWNER : 0) | P.HB.TIME | (this.set.batteryPresent ? P.HB.BATT : 0),
-                            battMv: this.set.batteryPresent ? 3910 : 0, muteRemainS: rem, alarmOff: !this.set.alarmEnabled,
+                            battMv: this.set.batteryPresent ? (this.opts.charge === 'voll' ? 4208 : this.opts.charge ? 4108 : 3910) : 0, muteRemainS: rem, alarmOff: !this.set.alarmEnabled,
                             overCount: this.overCount, approachCount: this.approachCount, min: this.min, max: this.max, rateS1: 832, rateS2: 832, warnCount: 0 });
       this.emit('diag', { rtLoopMaxUs: 1180, latLastMs: 0.6, latMaxMs: 1.9, tempS1: 29, tempS2: 27, gaps1: 0, gaps2: 0, i2cErr: 0, rssi: -58, mainLoopMaxMs: 6, lost: 0, kfRejects: 0 });
     }

@@ -2,8 +2,8 @@
 'use strict';
 (function () {
   const P = window.KneeProto;
-  const APP_VERSION = '4.3.2';
-  const FW_VERSION = '3.1b';        // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
+  const APP_VERSION = '4.4.0';
+  const FW_VERSION = '3.2';        // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
   const $ = (id) => document.getElementById(id);
   const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d).replace('-', '−');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -171,7 +171,7 @@
   const heroSvg = $('heroKnee'); heroSvg.__g = window.KneeArt.gauge(heroSvg); heroSvg.dataset.kanim = 'hero';
   let rafPending = false, lastPhoneState = -1;
   function onLive(l) {
-    pushChart(l); recordRow(l); phoneAlarm(l); updCheck(); if (status) renderBatt();
+    pushChart(l); recordRow(l); phoneAlarm(l); updCheck(); if (status) renderBatt(); renderCharge();
     if (!rafPending) { rafPending = true; requestAnimationFrame(() => { rafPending = false; renderLive(); }); }
   }
   function invalidReason() {
@@ -192,19 +192,22 @@
     }
     const l = live, lim = l.effLimit, zone = settings ? settings.zone : 10;
     let st = 'ok', text = 'Im sicheren Bereich';
-    if (l.state === P.STATE.CAL) { st = 'invalid'; text = 'Kalibrierung läuft'; }
+    if (l.charge && l.charge.mode) { st = 'invalid'; text = 'Lädt · Messung pausiert'; }
+    else if (l.state === P.STATE.CAL) { st = 'invalid'; text = 'Kalibrierung läuft'; }
     else if (l.angle === null || l.state === P.STATE.INVALID) { st = 'invalid'; text = invalidReason(); }
     else if (l.state === P.STATE.OVER) { st = 'over'; text = (l.aflags & P.AF.PREDICTED) ? 'Achtung, Grenze!' : 'Überstreckt'; }
     else if (l.state === P.STATE.APPROACH) { st = 'approach'; text = 'Nahe an der Grenze'; }
     body.dataset.state = st;
     kneeView.set(l.angle, lim, zone, !settings || settings.approachOn, st);
-    if (l.angle === null) { $('angle').textContent = '–'; }
+    if (l.charge && l.charge.mode) { $('angle').textContent = ''; }
+    else if (l.angle === null) { $('angle').textContent = '–'; }
     else $('angle').innerHTML = esc(fmt(l.angle, 1)) + '<sup>°</sup>';
     $('stateLine').textContent = text;
     let sub = '';
     // Kein eigener Hinweis fuer die Seitenlage: die Genauigkeit soll das selbst zeigen (offener Punkt)
-    if (l.angle !== null && l.state !== P.STATE.CAL) {
-      if (l.aflags & P.AF.UNRELIABLE) sub = `Messung unsicher (±${fmt(l.sigma, 1)}°), kurz ruhig halten`;
+    if (l.charge && l.charge.mode) sub = 'Alarm aus, bis das Gerät abgesteckt oder bewegt wird';
+    else if (l.angle !== null && l.state !== P.STATE.CAL) {
+      if (l.aflags & P.AF.UNRELIABLE) sub = (l.sysFlags & P.SF.VERT) ? `Messung unsicher (±${fmt(l.sigma, 1)}°): Gelenk aufrichten` : `Messung unsicher (±${fmt(l.sigma, 1)}°), kurz ruhig halten`;
       else sub = `Grenze ${fmt(lim, 1)}° · Genauigkeit ±${fmt(Math.max(0.1, l.sigma), 1)}°`;
     }
     $('subLine').textContent = sub;
@@ -220,6 +223,7 @@
     const h = $('alarmHead'), l = live;
     let s = 'on', title = 'Alarm aktiv', sub = settings ? `Vibriert ab ${fmt(settings.limit, 1)}°` + (settings.approachOn ? `, leichte Pulse ab ${fmt(settings.limit + settings.zone, 1)}°` : '') : '–';
     if (conn !== 'connected') { s = 'off'; title = 'Nicht verbunden'; sub = 'Das Gerät warnt trotzdem selbständig.'; }
+    else if (l && l.charge && l.charge.mode) { s = 'off'; title = 'Lademodus'; sub = 'Kein Alarm, solange das Gerät lädt und ruhig liegt. Bewegen oder Abstecken schaltet ihn wieder ein.'; }
     else if (l && l.silence === P.SILENCE.OFF) { s = 'off'; title = 'Alarm ausgeschaltet'; sub = 'Das Gerät vibriert nicht.'; }
     else if (l && l.silence === P.SILENCE.MUTED) { const r = status ? status.muteRemainS : 0; s = 'muted'; title = 'Stumm'; sub = `Noch ${Math.floor(r / 60)}:${String(r % 60).padStart(2, '0')} min, dann wieder aktiv.`; }
     h.dataset.s = s; $('alarmTitle').textContent = title; $('muteState').textContent = sub;
@@ -243,8 +247,37 @@
     const volt = fmt(status.battMv / 1000, 2) + ' V';
     bt.hidden = false; bt.dataset.lvl = lvl; $('battPct').textContent = battVolt ? volt : pct + ' %';
     $('battFill').setAttribute('width', (Math.max(6, pct) / 100 * 21).toFixed(1));
-    bt.setAttribute('aria-label', `Akku ${pct} Prozent, ${volt}. Antippen wechselt die Anzeige`);
+    const ch = live && live.charge;
+    $('battBolt').toggleAttribute('hidden', !(ch && ch.present));   // SVG kennt .hidden nicht
+    bt.setAttribute('aria-label', `Akku ${pct} Prozent, ${volt}${ch && ch.present ? (ch.full ? ', voll' : ', lädt') : ''}. Antippen wechselt die Anzeige`);
     bt.title = battVolt ? `${pct} % (antippen: Prozent)` : `${volt} (antippen: Spannung)`;
+  }
+  // Akku-Karte auf «Messen», solange ein Ladegeraet erkannt ist (Handy: statt «Letzte 2 Minuten»)
+  function fmtEta(m) {
+    if (m === null || m === undefined) return '…';
+    if (m <= 5) return '< 5 min';
+    const h = Math.floor(m / 60), r = m % 60;
+    return h ? `${h} h ${String(r).padStart(2, '0')}` : `${r} min`;
+  }
+  function renderCharge() {
+    const card = $('akkuCard'), ch = conn === 'connected' && live ? live.charge : null;
+    const on = !!(ch && ch.present);
+    document.body.dataset.charge = on ? '1' : '0';
+    card.hidden = !on;
+    if (!on) return;
+    const pct = status && status.battMv > 0 ? battPercent() : null;
+    const s = ch.full ? 'full' : 'charging';
+    card.dataset.s = s;
+    card.dataset.lvl = pct === null ? 'ok' : pct <= 15 ? 'crit' : pct <= 35 ? 'low' : 'ok';
+    $('akkuState').textContent = ch.full ? 'voll' : 'lädt';
+    $('akkuPct').textContent = pct === null ? '–' : pct + ' %';
+    $('akkuMv').textContent = status && status.battMv > 0 ? status.battMv + ' mV' : '–';
+    $('akkuEta').textContent = ch.full ? 'fertig' : fmtEta(ch.etaMin);
+    $('akkuEtaLbl').textContent = ch.full ? 'bis voll' : (ch.etaMin === null ? 'bis voll (wird berechnet)' : 'bis voll, etwa');
+    const w = pct === null ? 0 : Math.max(4, pct) / 100 * 206;
+    $('akkuFill').setAttribute('width', w.toFixed(1));
+    $('akkuGrow').setAttribute('x', (12 + w).toFixed(1));
+    $('akkuNote').textContent = ch.mode ? 'Messung pausiert, Alarm aus. Abstecken oder Bewegen startet die Messung wieder.' : 'Ladegerät erkannt.';
   }
   // Ladestand: ab Firmware 3.0 vom Akkuwaechter (MAX17048), sonst grob aus der Spannung
   function battPercent() {
@@ -1046,7 +1079,7 @@
   const qs = new URLSearchParams(location.search);
   if (qs.has('rig')) { prefs.rig = qs.get('rig') === 'rig' ? 'rig' : 'leg'; }
   if (qs.has('demo')) {
-    demo = true; attach(new window.DemoDevice({ tilt: qs.has('tilt'), oldfw: qs.has('oldfw'), uncal: qs.has('uncal') }));
+    demo = true; attach(new window.DemoDevice({ tilt: qs.has('tilt'), oldfw: qs.has('oldfw'), uncal: qs.has('uncal'), charge: qs.has('charge') ? (qs.get('charge') || 'laedt') : null }));
     dev.connect().then(() => {
       show(qs.get('view') || 'live');
       if (qs.get('wizard')) { openWizard(qs.get('wizard')); if (qs.has('run')) { wzStart(qs.has('ref') ? parseFloat(qs.get('ref')) : null); if (qs.get('at')) setTimeout(() => dev.demoJump(qs.get('at')), 300); } }
