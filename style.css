@@ -239,7 +239,8 @@ body.fit-live { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) 
 #view-live .spark .cardhead { margin-bottom: 4px; }
 #view-live .spark .legend { margin-top: 4px; }
 /* Akku (ab App 4.4.0): Blitz im Akku oben rechts, grosse Akku-Karte beim Laden */
-.bicon .bbolt { fill: #fff; stroke: var(--schiefer); stroke-width: .9; stroke-linejoin: round; paint-order: stroke; }
+.bicon .bbolt-on { fill: var(--weiss); }          /* auf der Fuellung ausgespart (Farbe der Kopfzeile) */
+.bicon .bbolt-off { fill: var(--bc); }           /* neben der Fuellung in der Akkufarbe */
 .akku .cardhead { display: flex; align-items: center; justify-content: space-between; }
 .akku-state { font-size: 14px; font-weight: 600; color: #fff; background: var(--moos); border-radius: 999px; padding: 3px 10px; }
 .akku-body { display: flex; flex-direction: column; align-items: center; gap: 10px; }
@@ -252,21 +253,22 @@ body.fit-live { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) 
 .ab-fill { fill: var(--moos); transition: width .6s ease; }
 .akku[data-lvl="low"] .ab-fill { fill: var(--bernstein); }
 .akku[data-lvl="crit"] .ab-fill { fill: var(--rot); }
-.ab-bolt { fill: #fff; stroke: var(--schiefer); stroke-width: 3; stroke-linejoin: round; paint-order: stroke; }
+/* Blitz zweifarbig, ohne Umriss: auf der Fuellung ausgespart (Kartenfarbe), daneben in der Fuellfarbe. So bleibt er
+   bei jedem Ladestand und in beiden Designs klar; die runden Ecken kommen von einem Strich in derselben Farbe. */
+.ab-bolt-on { fill: var(--weiss); stroke: var(--weiss); stroke-width: 5; stroke-linejoin: round; }
+.ab-bolt-off { fill: var(--moos); stroke: var(--moos); stroke-width: 5; stroke-linejoin: round; }
+.akku[data-lvl="low"] .ab-bolt-off { fill: var(--bernstein); stroke: var(--bernstein); }
+.akku[data-lvl="crit"] .ab-bolt-off { fill: var(--rot); stroke: var(--rot); }
 .akku[data-s="full"] .ab-bolt { display: none; }
-.ab-check { display: none; fill: none; stroke: #fff; stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
+.ab-check { display: none; fill: none; stroke: var(--weiss); stroke-width: 13; stroke-linecap: round; stroke-linejoin: round; }
 .akku[data-s="full"] .ab-check { display: inline; }
 .akku[data-s="full"] #akkuEta { color: var(--moos); }
 body[data-charge="1"] #view-live .readout .angle:empty { display: none; }
-/* Laden: am Ende der Fuellung waechst immer wieder ein Stueck nach (gleiches Gruen) */
-.ab-grow { fill: var(--moos); display: none; transform-box: fill-box; transform-origin: left center; }
-.akku[data-lvl="low"] .ab-grow { fill: var(--bernstein); }
-.akku[data-lvl="crit"] .ab-grow { fill: var(--rot); }
-.akku[data-s="charging"] .ab-grow { display: inline; animation: akkuGrow 1.8s ease-in-out infinite; }
-.akku[data-s="charging"] .ab-bolt { animation: akkuBolt 1.8s ease-in-out infinite; transform-origin: 120px 58px; }
-@keyframes akkuGrow { 0% { transform: scaleX(0); } 70%, 100% { transform: scaleX(1); } }
-@keyframes akkuBolt { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .akku .ab-grow, .akku .ab-bolt { animation: none !important; } }
+/* Laden: nur der Blitz pulsiert (beide Haelften gleich, die Trennung bleibt am Ende der Fuellung) */
+.ab-pulse { transform-box: fill-box; transform-origin: center; }
+.akku[data-s="charging"] .ab-pulse { animation: akkuBolt 1.2s ease-in-out infinite; }
+@keyframes akkuBolt { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.14); } }
+@media (prefers-reduced-motion: reduce) { .akku .ab-pulse { animation: none !important; } }
 .akku-facts { width: 100%; }
 .akku-facts b { font-size: 30px; }
 .akku-note { margin: 10px 2px 0; font-size: 14px; color: var(--grau); text-align: center; }

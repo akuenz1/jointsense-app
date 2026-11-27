@@ -246,7 +246,10 @@
     const lvl = ((fl & P.AF.BATT_CRIT) || pct <= 15) ? 'crit' : ((fl & P.AF.BATT_LOW) || pct <= 35) ? 'low' : 'ok';
     const volt = fmt(status.battMv / 1000, 2) + ' V';
     bt.hidden = false; bt.dataset.lvl = lvl; $('battPct').textContent = battVolt ? volt : pct + ' %';
-    $('battFill').setAttribute('width', (Math.max(6, pct) / 100 * 21).toFixed(1));
+    const fw = Math.max(6, pct) / 100 * 21;
+    $('battFill').setAttribute('width', fw.toFixed(1));
+    $('battClipOnRect').setAttribute('width', fw.toFixed(2));
+    $('battClipOffRect').setAttribute('x', (2.75 + fw).toFixed(2)); $('battClipOffRect').setAttribute('width', (21 - fw).toFixed(2));
     const ch = live && live.charge;
     $('battBolt').toggleAttribute('hidden', !(ch && ch.present));   // SVG kennt .hidden nicht
     bt.setAttribute('aria-label', `Akku ${pct} Prozent, ${volt}${ch && ch.present ? (ch.full ? ', voll' : ', lädt') : ''}. Antippen wechselt die Anzeige`);
@@ -276,7 +279,8 @@
     $('akkuEtaLbl').textContent = ch.full ? 'bis voll' : (ch.etaMin === null ? 'bis voll (wird berechnet)' : 'bis voll, etwa');
     const w = pct === null ? 0 : Math.max(4, pct) / 100 * 206;
     $('akkuFill').setAttribute('width', w.toFixed(1));
-    $('akkuGrow').setAttribute('x', (12 + w).toFixed(1));
+    $('akkuClipOnRect').setAttribute('width', w.toFixed(1));
+    $('akkuClipOffRect').setAttribute('x', (12 + w).toFixed(1)); $('akkuClipOffRect').setAttribute('width', (206 - w).toFixed(1));
     $('akkuNote').textContent = ch.mode ? 'Messung pausiert, Alarm aus. Abstecken oder Bewegen startet die Messung wieder.' : 'Ladegerät erkannt.';
   }
   // Ladestand: ab Firmware 3.0 vom Akkuwaechter (MAX17048), sonst grob aus der Spannung
