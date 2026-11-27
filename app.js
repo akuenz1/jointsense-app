@@ -2,8 +2,8 @@
 'use strict';
 (function () {
   const P = window.KneeProto;
-  const APP_VERSION = '4.3.0';
-  const FW_VERSION = '3.1';         // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
+  const APP_VERSION = '4.3.1';
+  const FW_VERSION = '3.1a';        // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
   const $ = (id) => document.getElementById(id);
   const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d).replace('-', '−');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -109,6 +109,8 @@
     if (conn === 'connected' && !await ask(demo ? 'Demo beenden?' : `Verbindung zu «${dev.name}» trennen? Das Gerät misst und warnt weiter.`, demo ? 'Beenden' : 'Trennen', 'Abbrechen')) return;
     dev.disconnect(); if (demo) show('welcome');
   }
+  $('batt').addEventListener('click', toggleBatt);
+  $('batt').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBatt(); } });
   $('btnConn').addEventListener('click', () => {
     if (conn === 'connected' || conn === 'reconnecting' || conn === 'connecting') disconnectAsk();
     else if (demo) { show('welcome'); } else connectReal();
@@ -224,15 +226,25 @@
     $('btnArm2').hidden = !(conn === 'connected' && l && l.silence !== P.SILENCE.NONE);
     $('muteBtns').hidden = conn !== 'connected' || (l && l.silence === P.SILENCE.OFF);
   }
-  // Akku oben rechts wie am Handy: Prozent und Symbol, gruen / gelb / rot
+  // Akku oben rechts wie am Handy: Prozent und Symbol, gruen / gelb / rot. Antippen wechselt zwischen
+  // Prozent und Spannung (die Spannung kommt mit jedem Statuspaket; die Prozente sind noch ungenau).
+  let battVolt = false;
+  try { battVolt = localStorage.getItem('js-batt-volt') === '1'; } catch (e) { /* ohne Speicher: Prozent */ }
+  function toggleBatt() {
+    battVolt = !battVolt;
+    try { localStorage.setItem('js-batt-volt', battVolt ? '1' : '0'); } catch (e) { /* egal */ }
+    renderBatt();
+  }
   function renderBatt() {
     const bt = $('batt');
     if (conn !== 'connected' || !status || !(status.hwBits & P.HB.BATT) || !(status.battMv > 0)) { bt.hidden = true; return; }
     const pct = battPercent(), fl = live ? live.aflags : 0;
     const lvl = ((fl & P.AF.BATT_CRIT) || pct <= 15) ? 'crit' : ((fl & P.AF.BATT_LOW) || pct <= 35) ? 'low' : 'ok';
-    bt.hidden = false; bt.dataset.lvl = lvl; $('battPct').textContent = pct + ' %';
+    const volt = fmt(status.battMv / 1000, 2) + ' V';
+    bt.hidden = false; bt.dataset.lvl = lvl; $('battPct').textContent = battVolt ? volt : pct + ' %';
     $('battFill').setAttribute('width', (Math.max(6, pct) / 100 * 21).toFixed(1));
-    bt.setAttribute('aria-label', `Akku ${pct} Prozent`); bt.setAttribute('role', 'img');
+    bt.setAttribute('aria-label', `Akku ${pct} Prozent, ${volt}. Antippen wechselt die Anzeige`);
+    bt.title = battVolt ? `${pct} % (antippen: Prozent)` : `${volt} (antippen: Spannung)`;
   }
   // Ladestand: ab Firmware 3.0 vom Akkuwaechter (MAX17048), sonst grob aus der Spannung
   function battPercent() {
