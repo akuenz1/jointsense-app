@@ -2,8 +2,8 @@
 'use strict';
 (function () {
   const P = window.KneeProto;
-  const APP_VERSION = '4.4.1';
-  const FW_VERSION = '3.2a';        // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
+  const APP_VERSION = '4.4.0';
+  const FW_VERSION = '3.2';        // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
   const $ = (id) => document.getElementById(id);
   const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d).replace('-', '−');
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
