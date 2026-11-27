@@ -497,8 +497,9 @@ ol.todo li::before { content: counter(s); width: 28px; height: 28px; border-radi
    ab 760 px  Navigation als Leiste links, Kacheln in zwei Spalten, Dialoge in der Mitte
    ab 760 px quer  Messen: Anzeige links, Kennzahlen und Verlauf rechts
    ab 1100 px  Navigation mit Beschriftung daneben, Kalibrieren und Verlauf zweispaltig
+   Handy quer (wenig Hoehe): wie Tablet quer, aber alles kompakter (Block am Ende)
    ========================================================================== */
-@media (min-width: 760px) {
+@media (min-width: 760px), (orientation: landscape) and (max-height: 520px) and (min-width: 560px) {
   :root { --rail: 96px; }
   body, body.fit-live { padding-bottom: 0; }
   #banners, main { margin-left: var(--rail); }
@@ -534,7 +535,7 @@ ol.todo li::before { content: counter(s); width: 28px; height: 28px; border-radi
   .wordmark { font-size: 48px; }
 }
 
-@media (min-width: 1000px) {
+@media (min-width: 1000px), (orientation: landscape) and (max-height: 520px) and (min-width: 560px) {
   /* Start: Marke und Knopf links, Anzeige rechts */
   .welcome { max-width: 1120px; margin: 0 auto; padding: 48px 40px; box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: 1fr auto auto 1fr; column-gap: 56px; align-items: center; }
   .welcome .brandbar { grid-column: 1; grid-row: 2; padding: 0; }
@@ -544,7 +545,7 @@ ol.todo li::before { content: counter(s); width: 28px; height: 28px; border-radi
 }
 
 /* Quer (Tablet quer, Laptop): Anzeige und Verlauf nebeneinander, alles ohne Scrollen */
-@media (min-width: 760px) and (min-aspect-ratio: 5/4) {
+@media (min-width: 760px) and (min-aspect-ratio: 5/4), (orientation: landscape) and (max-height: 520px) and (min-width: 560px) {
   #view-live { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(330px, 1fr); gap: 16px; height: var(--live-h, auto); min-height: 0; }
   #view-live .herocard { margin: 0; min-height: 0; }
   #view-live .herocard .gauge { max-height: none; }
@@ -577,6 +578,58 @@ ol.todo li::before { content: counter(s); width: 28px; height: 28px; border-radi
   #view-log .logstats { grid-area: s; }
   #view-log .logstore { grid-area: g; }
   #view-log .chart { height: clamp(300px, 46vh, 520px); }
+}
+
+/* Handy quer: wenig Hoehe. Navigation links passt mit kleineren Knoepfen, Messen ohne Scrollen,
+   Assistent ueber den ganzen Bildschirm, Start zweispaltig */
+@media (orientation: landscape) and (max-height: 520px) and (min-width: 560px) {
+  :root { --rail: 78px; }
+  .top { padding: 3px 12px 3px 8px; }
+  .who { min-height: 40px; padding: 2px 6px 2px 2px; gap: 9px; }
+  .who .logo { width: 32px; height: 32px; border-radius: 9px; }
+  .who .name b { font-size: 16px; }
+  .who .name small { font-size: 12.5px; }
+  .tabs { padding: 4px 0 calc(4px + env(safe-area-inset-bottom)); gap: 0; }
+  .tabs button { height: min(60px, calc((100vh - var(--top-h, 48px) - 10px) / 5)); font-size: 11.5px; gap: 2px; flex-direction: column; padding: 0; border-radius: 0; }
+  .tabs button svg { width: 44px; height: 26px; padding: 2px 11px; }
+  .tabs button[aria-current="page"] { background: none; }
+  .tabs button[aria-current="page"] svg { background: var(--petrol-hell); }
+  .view { padding: 8px 16px 14px; }
+  .title { font-size: 24px; margin: 2px 4px 8px; }
+  .banner { margin: 6px 16px; padding: 8px 12px; }
+
+  #view-live { gap: 10px; }
+  #view-live .herocard { padding: 6px; }
+  #view-live .herocard .gauge { min-height: 70px; }
+  .angle { font-size: clamp(40px, 15vh, 64px); }
+  .stateline { font-size: 16px; }
+  .subline { font-size: 13.5px; min-height: 18px; }
+  #view-live .facts { padding: 6px 4px; margin-bottom: 8px; }
+  #view-live .facts b { font-size: 24px; }
+  #view-live .facts span { font-size: 12px; }
+  #view-live .livecol .spark { padding: 10px 12px; }
+  #view-live .livecol .spark canvas { min-height: 70px; }
+  #view-live .spark .legend { font-size: 12px; }
+  .silbar { margin-bottom: 8px; padding: 6px 6px 6px 12px; }
+
+  .wizard { top: 0; bottom: 0; left: 0; right: 0; width: auto; transform: none; border-radius: 0; box-shadow: none; }
+  .wizard header { border-radius: 0; padding: 6px 16px; }
+  .wizard header h2 { font-size: 19px; }
+  .wizard .body { padding-top: 8px; }
+  .pict { max-height: 44vh; }
+  .wizard .foot { padding-top: 6px; padding-bottom: calc(8px + env(safe-area-inset-bottom)); }
+
+  .welcome { padding: 16px 28px; min-height: 100vh; column-gap: 32px; }
+  .welcome .hero { padding: 14px 12px 10px; }
+  .welcome .hero .gauge { max-height: calc(100vh - 70px); }
+  .brandbar .logo { width: 56px; height: 56px; border-radius: 16px; }
+  .wordmark { font-size: 36px; }
+  .welcome .startbtns { padding-top: 18px; }
+  .btn.big { min-height: 52px; }
+
+  .dlgbox { max-height: calc(100vh - 24px); overflow: auto; }
+  .dlg { padding: 8px; }
+  #toast { bottom: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

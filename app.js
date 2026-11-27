@@ -52,8 +52,8 @@
   }
   // "Messen" fuellt genau den Platz zwischen Kopfzeile und Reiterleiste: die Anzeige waechst oder schrumpft,
   // damit unten derselbe Abstand bleibt wie oben - auf jedem Handy, unabhaengig von der Bildschirmhoehe
-  // Hoehe fuer «Messen» (ohne Scrollen). Ab 760 px Breite steht die Navigation links statt unten.
-  const mqRail = window.matchMedia ? window.matchMedia('(min-width: 760px)') : { matches: false };
+  // Hoehe fuer «Messen» (ohne Scrollen). Ab 760 px Breite und am Handy quer steht die Navigation links statt unten.
+  const mqRail = window.matchMedia ? window.matchMedia('(min-width: 760px), (orientation: landscape) and (max-height: 520px) and (min-width: 560px)') : { matches: false };
   function fitLive() {
     const topH = $('top').offsetHeight;
     document.documentElement.style.setProperty('--top-h', topH + 'px');
