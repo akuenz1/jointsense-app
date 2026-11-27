@@ -2,7 +2,7 @@
 'use strict';
 (function () {
   const P = window.KneeProto;
-  const APP_VERSION = '4.2.0';
+  const APP_VERSION = '4.3.0';
   const FW_VERSION = '3.1';         // Firmware, mit der diese App ausgeliefert und getestet wurde (Anzeige auf der Startseite)
   const $ = (id) => document.getElementById(id);
   const fmt = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? '–' : v.toFixed(d).replace('-', '−');
@@ -44,6 +44,7 @@
     const inApp = v !== 'welcome';
     $('tabs').hidden = !inApp; $('top').hidden = !inApp;
     document.body.classList.toggle('fit-live', v === 'live');
+    document.documentElement.style.setProperty('--top-h', $('top').offsetHeight + 'px');
     if (v === 'live') fitLive();
     if (v === 'log') drawChart($('chart'), chartSpan * 1000);
     if (v === 'live') drawChart($('spark'), 120000);
@@ -51,11 +52,19 @@
   }
   // "Messen" fuellt genau den Platz zwischen Kopfzeile und Reiterleiste: die Anzeige waechst oder schrumpft,
   // damit unten derselbe Abstand bleibt wie oben - auf jedem Handy, unabhaengig von der Bildschirmhoehe
+  // Hoehe fuer «Messen» (ohne Scrollen). Ab 760 px Breite steht die Navigation links statt unten.
+  const mqRail = window.matchMedia ? window.matchMedia('(min-width: 760px)') : { matches: false };
   function fitLive() {
-    const h = window.innerHeight - $('top').offsetHeight - $('tabs').offsetHeight;
+    const topH = $('top').offsetHeight;
+    document.documentElement.style.setProperty('--top-h', topH + 'px');
+    const h = window.innerHeight - topH - (mqRail.matches ? $('banners').offsetHeight : $('tabs').offsetHeight);
     if (h > 0) document.documentElement.style.setProperty('--live-h', h + 'px');
   }
-  window.addEventListener('resize', () => { if (curView === 'live') { fitLive(); drawChart($('spark'), 120000); } });
+  window.addEventListener('resize', () => {
+    document.documentElement.style.setProperty('--top-h', $('top').offsetHeight + 'px');
+    if (curView === 'live') { fitLive(); drawChart($('spark'), 120000); }
+    if (curView === 'log') drawChart($('chart'), chartSpan * 1000);
+  });
   document.querySelectorAll('#tabs button').forEach((b) => b.addEventListener('click', () => show(b.dataset.tab)));
 
   // ---------------------------------------------------------------------------
@@ -82,10 +91,22 @@
     try { ensureAudio(); await dev.connect(); show('live'); }
     catch (e) { if (e && e.name !== 'NotFoundError') toast('Verbindung fehlgeschlagen' + (e && e.name === 'StepError' ? ' – ' + e.message : '. Ist das Gerät eingeschaltet und in der Nähe?'), true); conn = 'disconnected'; renderConn(); }
   }
-  $('btnStart').addEventListener('click', connectReal);
+  // Ansicht ohne Geraet (Demo), versteckt: «Geraet verbinden» 10 s gedrueckt halten.
+  // Wer kuerzer drueckt, verbindet wie immer.
+  const DEMO_HOLD_MS = 10000;
+  let holdTimer = 0, holdFired = false;
+  async function startDemo() { demo = true; attach(new window.DemoDevice()); ensureAudio(); await dev.connect(); show('live'); }
+  const bStart = $('btnStart');
+  bStart.addEventListener('pointerdown', () => {
+    holdFired = false; clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => { holdFired = true; if (navigator.vibrate) navigator.vibrate(40); startDemo(); }, DEMO_HOLD_MS);
+  });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => bStart.addEventListener(ev, () => clearTimeout(holdTimer)));
+  bStart.addEventListener('contextmenu', (e) => e.preventDefault());
+  bStart.addEventListener('click', (e) => { if (holdFired) { holdFired = false; e.preventDefault(); return; } connectReal(); });
   async function disconnectAsk() {
     if (!dev) { show('welcome'); return; }
-    if (conn === 'connected' && !await ask(`Verbindung zu «${dev.name}» trennen? Das Gerät misst und warnt weiter.`, 'Trennen', 'Abbrechen')) return;
+    if (conn === 'connected' && !await ask(demo ? 'Demo beenden?' : `Verbindung zu «${dev.name}» trennen? Das Gerät misst und warnt weiter.`, demo ? 'Beenden' : 'Trennen', 'Abbrechen')) return;
     dev.disconnect(); if (demo) show('welcome');
   }
   $('btnConn').addEventListener('click', () => {
@@ -94,7 +115,7 @@
   });
   $('btnDisc').addEventListener('click', disconnectAsk);
   function renderConn() {
-    const map = { connected: ['on', 'verbunden'], connecting: ['wait', 'verbinde …'], reconnecting: ['wait', 'Verbindung verloren, suche …'], disconnected: ['off', 'getrennt · tippen zum Verbinden'] };
+    const map = { connected: ['on', demo ? 'Demo, ohne Gerät' : 'verbunden'], connecting: ['wait', 'verbinde …'], reconnecting: ['wait', 'Verbindung verloren, suche …'], disconnected: ['off', 'getrennt · tippen zum Verbinden'] };
     const m = map[conn] || map.disconnected;
     $('connDot').dataset.s = m[0]; $('btnConn').dataset.s = m[0]; $('connText').textContent = m[1];
     $('btnConn').setAttribute('aria-label', conn === 'connected' ? 'Verbunden, tippen zum Trennen' : 'Nicht verbunden, tippen zum Verbinden');
@@ -1006,7 +1027,7 @@
   // ---------------------------------------------------------------------------
   //  Start
   // ---------------------------------------------------------------------------
-  if (!window.KneeDevice.supported) { $('noBle').hidden = false; $('btnStart').disabled = true; }
+  if (!window.KneeDevice.supported) $('noBle').hidden = false;   // Knopf bleibt aktiv (Demo durch langes Druecken)
   if (!window.KNEE_PREVIEW && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
   renderConn(); renderPair(); renderDevTile(); applyWake(); applyTheme();
   // Zum Testen der Oberflaeche:  index.html?demo  bzw.  ?demo&view=alarm

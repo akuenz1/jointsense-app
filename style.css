@@ -201,6 +201,7 @@ main { max-width: 640px; margin: 0 auto; }
 .hero .g-overcap { fill: #ff8a80; }
 .hero .g-app { stroke: #ffc94d; }
 .startbtns { display: flex; flex-direction: column; gap: 12px; padding-top: 22px; }
+#btnStart { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .startbtns .note { margin: 0; }
 
 /* ---------- Messen ---------- */
@@ -214,7 +215,7 @@ body[data-state="invalid"], body[data-state="off"] { --tint: var(--weiss); --akz
 body.fit-live { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 1px); min-height: 0; }
 #view-live { display: flex; flex-direction: column; box-sizing: border-box; min-height: var(--live-h, auto); }
 #view-live > * { flex: none; }
-#view-live > .card:last-child { margin-bottom: 0; }
+#view-live .livecol > .card:last-child { margin-bottom: 0; }
 #view-live .herocard { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; min-height: 0; }
 #view-live .herocard .gauge { flex: 1 1 0; width: 100%; height: auto; min-height: 110px; max-height: 320px; aspect-ratio: auto; }
 .angle { font-family: "Barlow Condensed", "Barlow", sans-serif; font-weight: 600; font-size: clamp(48px, min(15vw, 7.6vh), 88px); line-height: .92; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
@@ -490,6 +491,93 @@ ol.todo li::before { content: counter(s); width: 28px; height: 28px; border-radi
 .dlgbox .btn { flex: 1; }
 #toast { position: fixed; left: 14px; right: 14px; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 14px); z-index: 30; margin: 0; background: var(--ink); color: var(--on-ink); box-shadow: 0 8px 24px rgba(31, 42, 51, .28); }
 #toast.err { background: var(--rot); }
+
+/* ==========================================================================
+   Tablet und Laptop: gleiche Inhalte, andere Anordnung
+   ab 760 px  Navigation als Leiste links, Kacheln in zwei Spalten, Dialoge in der Mitte
+   ab 760 px quer  Messen: Anzeige links, Kennzahlen und Verlauf rechts
+   ab 1100 px  Navigation mit Beschriftung daneben, Kalibrieren und Verlauf zweispaltig
+   ========================================================================== */
+@media (min-width: 760px) {
+  :root { --rail: 96px; }
+  body, body.fit-live { padding-bottom: 0; }
+  #banners, main { margin-left: var(--rail); }
+  main { max-width: none; }
+  .view { padding: 20px 28px 32px; max-width: 1240px; margin: 0 auto; box-sizing: border-box; }
+  .title { margin-top: 4px; }
+
+  .tabs { top: var(--top-h, 64px); bottom: 0; right: auto; width: var(--rail); flex-direction: column; justify-content: flex-start; gap: 4px; padding: 16px 0 calc(16px + env(safe-area-inset-bottom)); border-top: 0; border-right: 1px solid var(--linie); }
+  .tabs button { flex: none; height: 74px; }
+
+  .banner { margin-left: 28px; margin-right: 28px; }
+  #toast { left: calc(var(--rail) + 28px); right: 28px; bottom: 24px; max-width: 560px; margin: 0 auto; }
+  .savebar { bottom: 18px; }
+  .dlg { align-items: center; }
+
+  /* Kacheln (Alarm, Mehr) fliessen in zwei Spalten */
+  .cols { column-count: 2; column-gap: 16px; }
+  .cols > .card { break-inside: avoid; page-break-inside: avoid; display: block; }
+
+  /* Messen hochkant (Tablet): Anzeige oben, darunter Kennzahlen und Verlauf */
+  #view-live .herocard .gauge { max-height: 460px; }
+  .angle { font-size: clamp(56px, min(9vw, 8vh), 104px); }
+
+  /* Kalibrier-Assistent als Fenster in der Mitte */
+  .wizard { top: 24px; bottom: 24px; left: 50%; right: auto; width: min(720px, calc(100vw - 48px)); transform: translateX(-50%); border-radius: 26px; box-shadow: 0 0 0 100vmax var(--scrim), 0 24px 70px rgba(0, 0, 0, .35); }
+  .wizard header { border-radius: 26px 26px 0 0; }
+  .wizard .body, .wizard .foot { max-width: none; padding-left: 28px; padding-right: 28px; box-sizing: border-box; }
+  .pict { max-width: 460px; }
+
+  /* Start hochkant: wie am Handy, mittig und etwas grosszuegiger */
+  .welcome { max-width: 620px; margin: 0 auto; padding: 40px 28px; box-sizing: border-box; }
+  .brandbar .logo { width: 72px; height: 72px; border-radius: 20px; }
+  .wordmark { font-size: 48px; }
+}
+
+@media (min-width: 1000px) {
+  /* Start: Marke und Knopf links, Anzeige rechts */
+  .welcome { max-width: 1120px; margin: 0 auto; padding: 48px 40px; box-sizing: border-box; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: 1fr auto auto 1fr; column-gap: 56px; align-items: center; }
+  .welcome .brandbar { grid-column: 1; grid-row: 2; padding: 0; }
+  .welcome .startbtns { grid-column: 1; grid-row: 3; padding-top: 34px; }
+  .welcome .hero { grid-column: 2; grid-row: 1 / span 4; margin: 0; padding: 40px 24px 28px; }
+  .welcome .hero .gauge { max-width: 560px; }
+}
+
+/* Quer (Tablet quer, Laptop): Anzeige und Verlauf nebeneinander, alles ohne Scrollen */
+@media (min-width: 760px) and (min-aspect-ratio: 5/4) {
+  #view-live { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(330px, 1fr); gap: 16px; height: var(--live-h, auto); min-height: 0; }
+  #view-live .herocard { margin: 0; min-height: 0; }
+  #view-live .herocard .gauge { max-height: none; }
+  #view-live .livecol { display: flex; flex-direction: column; min-height: 0; }
+  #view-live .livecol .spark { flex: 1 1 auto; display: flex; flex-direction: column; min-height: 0; margin-bottom: 0; }
+  #view-live .livecol .spark canvas { flex: 1 1 auto; height: auto; min-height: 150px; }
+  #view-live .facts { padding: 16px 8px; }
+  #view-live .facts b { font-size: 34px; }
+}
+
+@media (min-width: 1100px) {
+  :root { --rail: 216px; }
+  .tabs { padding: 18px 12px; gap: 6px; }
+  .tabs button { height: 52px; flex-direction: row; justify-content: flex-start; gap: 12px; padding: 0 14px 0 6px; border-radius: 26px; font-size: 16px; }
+  .tabs button svg { width: 40px; height: 40px; padding: 8px; border-radius: 20px; }
+  .tabs button[aria-current="page"] { background: var(--petrol-hell); }
+  .tabs button[aria-current="page"] svg { background: none; }
+
+  /* Kalibrieren: Status links, Ablaeufe rechts */
+  #view-cal { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); column-gap: 20px; align-items: start; }
+  #view-cal > .title { grid-column: 1 / -1; }
+  #view-cal .calmain .btn.wide { margin-bottom: 12px; }
+
+  /* Verlauf: grosses Diagramm links, Kennzahlen und gespeicherte Ereignisse rechts */
+  #view-log { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); grid-template-rows: auto auto 1fr; grid-template-areas: "t t" "c s" "c g"; column-gap: 20px; align-items: start; }
+  #view-log .logstore .row { flex-wrap: wrap; }
+  #view-log .logstore .row .grow { flex-basis: 100%; }
+  #view-log > .title { grid-area: t; }
+  #view-log .logchart { grid-area: c; }
+  #view-log .logstats { grid-area: s; }
+  #view-log .logstore { grid-area: g; }
+  #view-log .chart { height: clamp(300px, 46vh, 520px); }
+}
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 
